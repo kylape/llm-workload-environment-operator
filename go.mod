@@ -1,4 +1,4 @@
-module github.com/kylape/inference-workspace-operator
+module github.com/kylape/llm-workload-environment-operator
 
 go 1.25.0
 

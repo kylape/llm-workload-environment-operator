@@ -1,12 +1,12 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: inference-workspace-requester
+  name: llm-workload-environment-requester
 rules:
   - apiGroups:
-      - inference.redhat.com
+      - llm.redhat.com
     resources:
-      - inferenceworkspaces
+      - llmworkloadenvironments
     verbs:
       - create
       - delete

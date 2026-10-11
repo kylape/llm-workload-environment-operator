@@ -6,10 +6,10 @@ import (
 	"os"
 	"time"
 
-	workspacev1alpha1 "github.com/kylape/inference-workspace-operator/api/v1alpha1"
-	workspacecontroller "github.com/kylape/inference-workspace-operator/internal/controller"
-	workspaceplatform "github.com/kylape/inference-workspace-operator/internal/platform"
-	workspacevcluster "github.com/kylape/inference-workspace-operator/internal/vcluster"
+	environmentv1alpha1 "github.com/kylape/llm-workload-environment-operator/api/v1alpha1"
+	environmentcontroller "github.com/kylape/llm-workload-environment-operator/internal/controller"
+	environmentplatform "github.com/kylape/llm-workload-environment-operator/internal/platform"
+	environmentvcluster "github.com/kylape/llm-workload-environment-operator/internal/vcluster"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -31,7 +31,7 @@ func init() {
 	utilruntime.Must(appsv1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
 	utilruntime.Must(rbacv1.AddToScheme(scheme))
-	utilruntime.Must(workspacev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(environmentv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(kueuev1beta2.AddToScheme(scheme))
 }
 
@@ -53,7 +53,7 @@ func main() {
 		ctrl.Log.Error(err, "unable to create discovery client")
 		os.Exit(1)
 	}
-	openShift, err := workspaceplatform.IsOpenShift(context.Background(), discoveryClient)
+	openShift, err := environmentplatform.IsOpenShift(context.Background(), discoveryClient)
 	if err != nil {
 		ctrl.Log.Error(err, "unable to determine cluster platform")
 		os.Exit(1)
@@ -68,7 +68,7 @@ func main() {
 		Metrics:                metricsserver.Options{BindAddress: metricsAddr, SecureServing: true},
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         leaderElection,
-		LeaderElectionID:       "inference-workspace-operator.inference.redhat.com",
+		LeaderElectionID:       "llm-workload-environment-operator.llm.redhat.com",
 		LeaseDuration:          &leaseDuration,
 		RenewDeadline:          &renewDeadline,
 		RetryPeriod:            &retryPeriod,
@@ -78,10 +78,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&workspacecontroller.InferenceWorkspaceReconciler{
+	if err := (&environmentcontroller.LLMWorkloadEnvironmentReconciler{
 		Client:            manager.GetClient(),
 		Scheme:            manager.GetScheme(),
-		VClusterInstaller: workspacevcluster.HelmInstaller{},
+		VClusterInstaller: environmentvcluster.HelmInstaller{},
 		OpenShift:         openShift,
 		APIServerURL:      config.Host,
 	}).SetupWithManager(manager); err != nil {

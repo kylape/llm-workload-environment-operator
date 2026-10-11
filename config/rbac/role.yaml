@@ -1,12 +1,12 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: inference-workspace-operator
+  name: llm-workload-environment-operator
 rules:
   - apiGroups:
-      - inference.redhat.com
+      - llm.redhat.com
     resources:
-      - inferenceworkspaces
+      - llmworkloadenvironments
     verbs:
       - get
       - list
@@ -14,17 +14,17 @@ rules:
       - update
       - patch
   - apiGroups:
-      - inference.redhat.com
+      - llm.redhat.com
     resources:
-      - inferenceworkspaces/status
+      - llmworkloadenvironments/status
     verbs:
       - get
       - update
       - patch
   - apiGroups:
-      - inference.redhat.com
+      - llm.redhat.com
     resources:
-      - inferenceworkspaces/finalizers
+      - llmworkloadenvironments/finalizers
     verbs:
       - update
   - apiGroups:
@@ -58,8 +58,8 @@ rules:
     resources:
       - clusterroles
     resourceNames:
-      - inference-workspace-user
-      - inference-workspace-vcluster
+      - llm-workload-environment-user
+      - llm-workload-environment-vcluster
     verbs:
       - bind
   - apiGroups:

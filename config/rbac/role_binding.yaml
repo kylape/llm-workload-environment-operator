@@ -1,12 +1,12 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: inference-workspace-operator
+  name: llm-workload-environment-operator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: inference-workspace-operator
+  name: llm-workload-environment-operator
 subjects:
   - kind: ServiceAccount
-    name: inference-workspace-operator
-    namespace: inference-workspace-operator
+    name: llm-workload-environment-operator
+    namespace: llm-workload-environment-operator

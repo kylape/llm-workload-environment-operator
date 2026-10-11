@@ -1,20 +1,20 @@
 apiVersion: tekton.dev/v1
 kind: PipelineRun
 metadata:
-  generateName: inference-workspace-operator-build-
-  namespace: inference-workspace-operator
+  generateName: llm-workload-environment-operator-build-
+  namespace: llm-workload-environment-operator
 spec:
   params:
     - name: git-revision
-      value: codex/initial-inference-workspace-api
+      value: main
     - name: image
-      value: quay.io/klape/inference-workspace-operator:45afba7
+      value: quay.io/klape/llm-workload-environment-operator:latest
     - name: push-image
       value: "true"
   pipelineRef:
-    name: inference-workspace-operator-build
+    name: llm-workload-environment-operator-build
   taskRunTemplate:
-    serviceAccountName: inference-workspace-operator-builder
+    serviceAccountName: llm-workload-environment-operator-builder
   timeouts:
     pipeline: 30m
   workspaces:
@@ -22,4 +22,4 @@ spec:
       name: source
     - name: registry-auth
       secret:
-        secretName: inference-workspace-operator-registry-auth
+        secretName: llm-workload-environment-operator-registry-auth

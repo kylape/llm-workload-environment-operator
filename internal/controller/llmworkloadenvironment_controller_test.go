@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	workspacev1alpha1 "github.com/kylape/inference-workspace-operator/api/v1alpha1"
+	environmentv1alpha1 "github.com/kylape/llm-workload-environment-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -22,50 +22,50 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func TestReconcileNamespaceWorkspace(t *testing.T) {
+func TestReconcileNamespaceEnvironment(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scheme := testScheme(t)
-	workspace := &workspacev1alpha1.InferenceWorkspace{
-		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "requests", UID: types.UID("workspace-uid")},
-		Spec: workspacev1alpha1.InferenceWorkspaceSpec{
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{
+		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "requests", UID: types.UID("environment-uid")},
+		Spec: environmentv1alpha1.LLMWorkloadEnvironmentSpec{
 			ClusterQueue: "development",
 		},
 	}
 	clusterQueue := &kueuev1beta2.ClusterQueue{ObjectMeta: metav1.ObjectMeta{Name: "development"}}
 	client := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithStatusSubresource(&workspacev1alpha1.InferenceWorkspace{}).
-		WithObjects(workspace, clusterQueue).
+		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
+		WithObjects(environment, clusterQueue).
 		Build()
-	reconciler := &InferenceWorkspaceReconciler{Client: client, Scheme: scheme}
-	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: workspace.Name, Namespace: workspace.Namespace}}
+	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}
 
 	if _, err := reconciler.Reconcile(ctx, request); err != nil {
 		t.Fatalf("adding finalizer: %v", err)
 	}
 	if _, err := reconciler.Reconcile(ctx, request); err != nil {
-		t.Fatalf("creating workspace resources: %v", err)
+		t.Fatalf("creating environment resources: %v", err)
 	}
 
 	namespace := &corev1.Namespace{}
-	if err := client.Get(ctx, types.NamespacedName{Name: "workspace-example"}, namespace); err != nil {
-		t.Fatalf("workspace namespace: %v", err)
+	if err := client.Get(ctx, types.NamespacedName{Name: "environment-example"}, namespace); err != nil {
+		t.Fatalf("environment namespace: %v", err)
 	}
 	if namespace.Labels[KueueManagedLabel] != "true" {
-		t.Fatalf("workspace namespace is not labeled for Kueue management: %#v", namespace.Labels)
+		t.Fatalf("environment namespace is not labeled for Kueue management: %#v", namespace.Labels)
 	}
-	if !workspaceOwns(namespace, workspace) || len(namespace.OwnerReferences) != 0 {
-		t.Fatalf("workspace namespace has unexpected ownership metadata: annotations=%#v owners=%#v", namespace.Annotations, namespace.OwnerReferences)
+	if !environmentOwns(namespace, environment) || len(namespace.OwnerReferences) != 0 {
+		t.Fatalf("environment namespace has unexpected ownership metadata: annotations=%#v owners=%#v", namespace.Annotations, namespace.OwnerReferences)
 	}
 	binding := &rbacv1.RoleBinding{}
 	if err := client.Get(ctx, types.NamespacedName{Name: AccessBindingName, Namespace: namespace.Name}, binding); err != nil {
-		t.Fatalf("workspace access RoleBinding: %v", err)
+		t.Fatalf("environment access RoleBinding: %v", err)
 	}
-	if binding.RoleRef.Kind != "ClusterRole" || binding.RoleRef.Name != WorkspaceRoleName ||
+	if binding.RoleRef.Kind != "ClusterRole" || binding.RoleRef.Name != EnvironmentRoleName ||
 		len(binding.Subjects) != 1 ||
 		binding.Subjects[0].Name != NamespaceKubeconfigServiceAccountName || binding.Subjects[0].Namespace != namespace.Name {
-		t.Fatalf("unexpected workspace access binding: %#v", binding)
+		t.Fatalf("unexpected environment access binding: %#v", binding)
 	}
 	queue := &kueuev1beta2.LocalQueue{}
 	if err := client.Get(ctx, types.NamespacedName{Name: LocalQueueName, Namespace: namespace.Name}, queue); err != nil {
@@ -75,11 +75,11 @@ func TestReconcileNamespaceWorkspace(t *testing.T) {
 		t.Fatalf("LocalQueue references %q, want %q", queue.Spec.ClusterQueue, "development")
 	}
 
-	current := &workspacev1alpha1.InferenceWorkspace{}
+	current := &environmentv1alpha1.LLMWorkloadEnvironment{}
 	if err := client.Get(ctx, request.NamespacedName, current); err != nil {
-		t.Fatalf("workspace status: %v", err)
+		t.Fatalf("environment status: %v", err)
 	}
-	ready := apimeta.FindStatusCondition(current.Status.Conditions, workspacev1alpha1.ReadyCondition)
+	ready := apimeta.FindStatusCondition(current.Status.Conditions, environmentv1alpha1.ReadyCondition)
 	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "QueueNotReady" {
 		t.Fatalf("unexpected Ready condition: %#v", ready)
 	}
@@ -89,30 +89,30 @@ func TestNamespaceCollision(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scheme := testScheme(t)
-	workspace := &workspacev1alpha1.InferenceWorkspace{
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "collision",
 			Namespace:  "requests",
-			UID:        types.UID("workspace-uid"),
+			UID:        types.UID("environment-uid"),
 			Finalizers: []string{FinalizerName},
 		},
 	}
-	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "workspace-collision"}}
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "environment-collision"}}
 	client := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithStatusSubresource(&workspacev1alpha1.InferenceWorkspace{}).
-		WithObjects(workspace, namespace).
+		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
+		WithObjects(environment, namespace).
 		Build()
-	reconciler := &InferenceWorkspaceReconciler{Client: client, Scheme: scheme}
+	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
 
-	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: workspace.Name, Namespace: workspace.Namespace}}); err != nil {
+	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}); err != nil {
 		t.Fatalf("reconcile collision: %v", err)
 	}
-	current := &workspacev1alpha1.InferenceWorkspace{}
-	if err := client.Get(ctx, types.NamespacedName{Name: workspace.Name, Namespace: workspace.Namespace}, current); err != nil {
-		t.Fatalf("workspace status: %v", err)
+	current := &environmentv1alpha1.LLMWorkloadEnvironment{}
+	if err := client.Get(ctx, types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}, current); err != nil {
+		t.Fatalf("environment status: %v", err)
 	}
-	ready := apimeta.FindStatusCondition(current.Status.Conditions, workspacev1alpha1.ReadyCondition)
+	ready := apimeta.FindStatusCondition(current.Status.Conditions, environmentv1alpha1.ReadyCondition)
 	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "NamespaceCollision" {
 		t.Fatalf("unexpected Ready condition: %#v", ready)
 	}
@@ -122,14 +122,14 @@ func TestNamespaceAccessOnlyBindsGeneratedServiceAccount(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scheme := testScheme(t)
-	workspace := &workspacev1alpha1.InferenceWorkspace{
-		ObjectMeta: metav1.ObjectMeta{Name: "revoke", Namespace: "requests", UID: types.UID("workspace-uid")},
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{
+		ObjectMeta: metav1.ObjectMeta{Name: "revoke", Namespace: "requests", UID: types.UID("environment-uid")},
 	}
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(workspace).Build()
-	reconciler := &InferenceWorkspaceReconciler{Client: client, Scheme: scheme}
-	const namespace = "workspace-revoke"
+	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(environment).Build()
+	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	const namespace = "environment-revoke"
 
-	if err := reconciler.ensureNamespaceServiceAccountAccess(ctx, workspace, namespace); err != nil {
+	if err := reconciler.ensureNamespaceServiceAccountAccess(ctx, environment, namespace); err != nil {
 		t.Fatal(err)
 	}
 	binding := &rbacv1.RoleBinding{}
@@ -137,7 +137,7 @@ func TestNamespaceAccessOnlyBindsGeneratedServiceAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(binding.Subjects) != 1 || binding.Subjects[0].Name != NamespaceKubeconfigServiceAccountName || binding.Subjects[0].Namespace != namespace {
-		t.Fatalf("unexpected subjects in workspace access binding: %#v", binding.Subjects)
+		t.Fatalf("unexpected subjects in environment access binding: %#v", binding.Subjects)
 	}
 }
 
@@ -145,33 +145,33 @@ func TestEnsureNamespaceKubeconfig(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scheme := testScheme(t)
-	workspace := &workspacev1alpha1.InferenceWorkspace{
-		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "requests", UID: types.UID("workspace-uid")},
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{
+		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "requests", UID: types.UID("environment-uid")},
 	}
-	namespace := "workspace-example"
+	namespace := "environment-example"
 	tokenSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        NamespaceKubeconfigTokenSecretName,
 			Namespace:   namespace,
-			Annotations: workspaceOwnershipAnnotations(workspace),
+			Annotations: environmentOwnershipAnnotations(environment),
 		},
 		Data: map[string][]byte{
 			corev1.ServiceAccountTokenKey:  []byte("token-value"),
 			corev1.ServiceAccountRootCAKey: []byte("ca-value"),
 		},
 	}
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(workspace, tokenSecret).Build()
-	reconciler := &InferenceWorkspaceReconciler{Client: client, Scheme: scheme, APIServerURL: "https://api.example.test/"}
+	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(environment, tokenSecret).Build()
+	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme, APIServerURL: "https://api.example.test/"}
 
-	secretRef, ready, err := reconciler.ensureNamespaceKubeconfig(ctx, workspace, namespace)
+	secretRef, ready, err := reconciler.ensureNamespaceKubeconfig(ctx, environment, namespace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ready || secretRef == nil || secretRef.Name != "workspace-example-kubeconfig" || secretRef.Namespace != workspace.Namespace {
+	if !ready || secretRef == nil || secretRef.Name != "environment-example-kubeconfig" || secretRef.Namespace != environment.Namespace {
 		t.Fatalf("unexpected namespace kubeconfig result: ready=%v ref=%#v", ready, secretRef)
 	}
 	kubeconfig := &corev1.Secret{}
-	if err := client.Get(ctx, types.NamespacedName{Name: "workspace-example-kubeconfig", Namespace: workspace.Namespace}, kubeconfig); err != nil {
+	if err := client.Get(ctx, types.NamespacedName{Name: "environment-example-kubeconfig", Namespace: environment.Namespace}, kubeconfig); err != nil {
 		t.Fatal(err)
 	}
 	contents := string(kubeconfig.Data["config"])
@@ -194,8 +194,8 @@ func TestLocalQueueActive(t *testing.T) {
 
 func TestClusterQueueDefaults(t *testing.T) {
 	t.Parallel()
-	workspace := &workspacev1alpha1.InferenceWorkspace{}
-	if got := requestedClusterQueue(workspace); got != kueuev1beta2.ClusterQueueReference(DefaultClusterQueueName) {
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{}
+	if got := requestedClusterQueue(environment); got != kueuev1beta2.ClusterQueueReference(DefaultClusterQueueName) {
 		t.Fatalf("default ClusterQueue is %q, want %q", got, DefaultClusterQueueName)
 	}
 }
@@ -217,18 +217,18 @@ func TestEnsureVClusterUsesDetectedPlatformAndScopedBinding(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scheme := testScheme(t)
-	workspace := &workspacev1alpha1.InferenceWorkspace{
-		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "requests", UID: types.UID("workspace-uid")},
-		Spec:       workspacev1alpha1.InferenceWorkspaceSpec{Mode: workspacev1alpha1.WorkspaceModeVCluster},
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{
+		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "requests", UID: types.UID("environment-uid")},
+		Spec:       environmentv1alpha1.LLMWorkloadEnvironmentSpec{Mode: environmentv1alpha1.EnvironmentModeVCluster},
 	}
-	namespace := "workspace-example"
+	namespace := "environment-example"
 	statefulSet := &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{Name: workspace.Name, Namespace: namespace},
+		ObjectMeta: metav1.ObjectMeta{Name: environment.Name, Namespace: namespace},
 		Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
 	}
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "vc-example", Namespace: namespace},
-		Data:       map[string][]byte{"config": []byte("apiVersion: v1\nclusters:\n- cluster:\n    certificate-authority-data: Y2E=\n    server: https://vc-example.workspace-example.svc\n  name: vcluster\n")},
+		Data:       map[string][]byte{"config": []byte("apiVersion: v1\nclusters:\n- cluster:\n    certificate-authority-data: Y2E=\n    server: https://vc-example.environment-example.svc\n  name: vcluster\n")},
 	}
 	ingress := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "config.openshift.io/v1",
@@ -237,20 +237,20 @@ func TestEnsureVClusterUsesDetectedPlatformAndScopedBinding(t *testing.T) {
 		"spec":       map[string]interface{}{"domain": "apps.example.test"},
 	}}
 	ingress.SetGroupVersionKind(schema.GroupVersionKind{Group: "config.openshift.io", Version: "v1", Kind: "Ingress"})
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(workspace, statefulSet, secret, ingress).Build()
+	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(environment, statefulSet, secret, ingress).Build()
 	installer := &recordingVClusterInstaller{}
-	reconciler := &InferenceWorkspaceReconciler{
+	reconciler := &LLMWorkloadEnvironmentReconciler{
 		Client:            client,
 		Scheme:            scheme,
 		VClusterInstaller: installer,
 		OpenShift:         true,
 	}
 
-	secretRef, ready, err := reconciler.ensureVCluster(ctx, workspace, namespace)
+	secretRef, ready, err := reconciler.ensureVCluster(ctx, environment, namespace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ready || secretRef == nil || secretRef.Name != "vc-example-external" || secretRef.Namespace != workspace.Namespace {
+	if !ready || secretRef == nil || secretRef.Name != "vc-example-external" || secretRef.Namespace != environment.Namespace {
 		t.Fatalf("unexpected vCluster readiness: ready=%v secretRef=%#v", ready, secretRef)
 	}
 	if installer.calls != 1 || !installer.openShift || installer.publicHost != "example.apps.example.test" {
@@ -264,7 +264,7 @@ func TestEnsureVClusterUsesDetectedPlatformAndScopedBinding(t *testing.T) {
 		binding.Subjects[0].Name != "vc-example" || binding.Subjects[0].Namespace != namespace {
 		t.Fatalf("unexpected vCluster binding: %#v", binding)
 	}
-	if !workspaceOwns(binding, workspace) || len(binding.OwnerReferences) != 0 {
+	if !environmentOwns(binding, environment) || len(binding.OwnerReferences) != 0 {
 		t.Fatalf("vCluster binding has unexpected ownership metadata: annotations=%#v owners=%#v", binding.Annotations, binding.OwnerReferences)
 	}
 	route := &unstructured.Unstructured{}
@@ -279,7 +279,7 @@ func TestEnsureVClusterUsesDetectedPlatformAndScopedBinding(t *testing.T) {
 		t.Fatalf("Route TLS termination = %q, want passthrough", termination)
 	}
 	publicSecret := &corev1.Secret{}
-	if err := client.Get(ctx, types.NamespacedName{Name: "vc-example-external", Namespace: workspace.Namespace}, publicSecret); err != nil {
+	if err := client.Get(ctx, types.NamespacedName{Name: "vc-example-external", Namespace: environment.Namespace}, publicSecret); err != nil {
 		t.Fatalf("public kubeconfig Secret: %v", err)
 	}
 	if !containsString(string(publicSecret.Data["config"]), "https://example.apps.example.test") {
@@ -291,19 +291,19 @@ func TestEnsureVClusterDoesNotCreateAccessBindings(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	scheme := testScheme(t)
-	workspace := &workspacev1alpha1.InferenceWorkspace{
-		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "requests", UID: types.UID("workspace-uid")},
-		Spec:       workspacev1alpha1.InferenceWorkspaceSpec{Mode: workspacev1alpha1.WorkspaceModeVCluster},
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{
+		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "requests", UID: types.UID("environment-uid")},
+		Spec:       environmentv1alpha1.LLMWorkloadEnvironmentSpec{Mode: environmentv1alpha1.EnvironmentModeVCluster},
 	}
-	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(workspace).Build()
-	reconciler := &InferenceWorkspaceReconciler{Client: client, Scheme: scheme}
-	namespace := "workspace-example"
+	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(environment).Build()
+	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	namespace := "environment-example"
 
-	if err := reconciler.removeLegacyVClusterAccess(ctx, workspace, namespace); err != nil {
+	if err := reconciler.removeLegacyVClusterAccess(ctx, environment, namespace); err != nil {
 		t.Fatal(err)
 	}
 	role := &rbacv1.Role{}
-	if err := client.Get(ctx, types.NamespacedName{Name: "workspace-kubeconfig-reader", Namespace: namespace}, role); err == nil {
+	if err := client.Get(ctx, types.NamespacedName{Name: "environment-kubeconfig-reader", Namespace: namespace}, role); err == nil {
 		t.Fatal("legacy vCluster access Role still exists")
 	}
 	binding := &rbacv1.RoleBinding{}
@@ -312,9 +312,9 @@ func TestEnsureVClusterDoesNotCreateAccessBindings(t *testing.T) {
 	}
 }
 
-func TestWorkspaceRoleCannotMutateLocalQueues(t *testing.T) {
+func TestEnvironmentRoleCannotMutateLocalQueues(t *testing.T) {
 	t.Parallel()
-	manifest, err := os.ReadFile("../../config/rbac/workspace_role.yaml")
+	manifest, err := os.ReadFile("../../config/rbac/environment_role.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,8 +322,8 @@ func TestWorkspaceRoleCannotMutateLocalQueues(t *testing.T) {
 	if err := yaml.Unmarshal(manifest, role); err != nil {
 		t.Fatal(err)
 	}
-	if role.Name != WorkspaceRoleName {
-		t.Fatalf("workspace role is named %q, want %q", role.Name, WorkspaceRoleName)
+	if role.Name != EnvironmentRoleName {
+		t.Fatalf("environment role is named %q, want %q", role.Name, EnvironmentRoleName)
 	}
 
 	foundLocalQueueRule := false
@@ -336,12 +336,12 @@ func TestWorkspaceRoleCannotMutateLocalQueues(t *testing.T) {
 		foundLocalQueueRule = true
 		for _, verb := range rule.Verbs {
 			if verb != "get" && verb != "list" && verb != "watch" {
-				t.Fatalf("workspace role grants LocalQueue mutation through verb %q", verb)
+				t.Fatalf("environment role grants LocalQueue mutation through verb %q", verb)
 			}
 		}
 	}
 	if !foundLocalQueueRule {
-		t.Fatal("workspace role should grant read-only LocalQueue visibility")
+		t.Fatal("environment role should grant read-only LocalQueue visibility")
 	}
 }
 
@@ -396,7 +396,7 @@ func testScheme(t *testing.T) *runtime.Scheme {
 	if err := rbacv1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
-	if err := workspacev1alpha1.AddToScheme(scheme); err != nil {
+	if err := environmentv1alpha1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	if err := kueuev1beta2.AddToScheme(scheme); err != nil {

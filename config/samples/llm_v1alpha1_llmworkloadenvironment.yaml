@@ -1,5 +1,5 @@
-apiVersion: inference.redhat.com/v1alpha1
-kind: InferenceWorkspace
+apiVersion: llm.redhat.com/v1alpha1
+kind: LLMWorkloadEnvironment
 metadata:
   name: alice-test
   namespace: alice-dev

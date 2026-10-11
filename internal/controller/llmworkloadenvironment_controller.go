@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	workspacev1alpha1 "github.com/kylape/inference-workspace-operator/api/v1alpha1"
-	workspacevcluster "github.com/kylape/inference-workspace-operator/internal/vcluster"
+	environmentv1alpha1 "github.com/kylape/llm-workload-environment-operator/api/v1alpha1"
+	environmentvcluster "github.com/kylape/llm-workload-environment-operator/internal/vcluster"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -26,125 +26,125 @@ import (
 )
 
 const (
-	FinalizerName                         = "inference.redhat.com/workspace-cleanup"
-	NamespacePrefix                       = "workspace-"
-	WorkspaceOwnerAnnotation              = "inference.redhat.com/workspace-owner"
-	WorkspaceUIDAnnotation                = "inference.redhat.com/workspace-uid"
-	AccessBindingName                     = "workspace-access"
-	WorkspaceRoleName                     = "inference-workspace-user"
-	VClusterRoleName                      = "inference-workspace-vcluster"
-	NamespaceKubeconfigServiceAccountName = "workspace-kubeconfig"
-	NamespaceKubeconfigTokenSecretName    = "workspace-kubeconfig-token"
+	FinalizerName                         = "llm.redhat.com/environment-cleanup"
+	NamespacePrefix                       = "environment-"
+	EnvironmentOwnerAnnotation            = "llm.redhat.com/environment-owner"
+	EnvironmentUIDAnnotation              = "llm.redhat.com/environment-uid"
+	AccessBindingName                     = "environment-access"
+	EnvironmentRoleName                   = "llm-workload-environment-user"
+	VClusterRoleName                      = "llm-workload-environment-vcluster"
+	NamespaceKubeconfigServiceAccountName = "environment-kubeconfig"
+	NamespaceKubeconfigTokenSecretName    = "environment-kubeconfig-token"
 	LocalQueueName                        = "default"
 	DefaultClusterQueueName               = "inference-workspaces"
 	KueueManagedLabel                     = "kueue.openshift.io/managed"
 	VClusterKubeconfigKey                 = "config"
 )
 
-var ErrNamespaceCollision = errors.New("workspace namespace already exists and is not controlled by this workspace")
-var ErrRouteCollision = errors.New("vCluster Route already exists and is not controlled by this workspace")
-var ErrKubeconfigSecretCollision = errors.New("public vCluster kubeconfig Secret already exists and is not controlled by this workspace")
-var ErrVClusterBindingCollision = errors.New("vCluster ClusterRoleBinding already exists and is not controlled by this workspace")
-var ErrAccessBindingCollision = errors.New("workspace access RoleBinding already exists and is not controlled by this workspace")
-var ErrLocalQueueCollision = errors.New("workspace LocalQueue already exists and is not controlled by this workspace")
-var ErrNamespaceKubeconfigServiceAccountCollision = errors.New("workspace kubeconfig ServiceAccount already exists and is not controlled by this workspace")
-var ErrNamespaceKubeconfigTokenSecretCollision = errors.New("workspace kubeconfig token Secret already exists and is not controlled by this workspace")
+var ErrNamespaceCollision = errors.New("environment namespace already exists and is not controlled by this environment")
+var ErrRouteCollision = errors.New("vCluster Route already exists and is not controlled by this environment")
+var ErrKubeconfigSecretCollision = errors.New("public vCluster kubeconfig Secret already exists and is not controlled by this environment")
+var ErrVClusterBindingCollision = errors.New("vCluster ClusterRoleBinding already exists and is not controlled by this environment")
+var ErrAccessBindingCollision = errors.New("environment access RoleBinding already exists and is not controlled by this environment")
+var ErrLocalQueueCollision = errors.New("environment LocalQueue already exists and is not controlled by this environment")
+var ErrNamespaceKubeconfigServiceAccountCollision = errors.New("environment kubeconfig ServiceAccount already exists and is not controlled by this environment")
+var ErrNamespaceKubeconfigTokenSecretCollision = errors.New("environment kubeconfig token Secret already exists and is not controlled by this environment")
 
 var openShiftRouteGVK = schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: "Route"}
 var openShiftIngressGVK = schema.GroupVersionKind{Group: "config.openshift.io", Version: "v1", Kind: "Ingress"}
 var openShiftInfrastructureGVK = schema.GroupVersionKind{Group: "config.openshift.io", Version: "v1", Kind: "Infrastructure"}
 
-type InferenceWorkspaceReconciler struct {
+type LLMWorkloadEnvironmentReconciler struct {
 	client.Client
 	Scheme            *runtime.Scheme
-	VClusterInstaller workspacevcluster.Installer
+	VClusterInstaller environmentvcluster.Installer
 	OpenShift         bool
 	APIServerURL      string
 }
 
-func (r *InferenceWorkspaceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	workspace := &workspacev1alpha1.InferenceWorkspace{}
-	if err := r.Get(ctx, req.NamespacedName, workspace); err != nil {
+func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{}
+	if err := r.Get(ctx, req.NamespacedName, environment); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	namespaceName := NamespacePrefix + workspace.Name
-	if workspace.DeletionTimestamp != nil {
-		return r.finalize(ctx, workspace, namespaceName)
+	namespaceName := NamespacePrefix + environment.Name
+	if environment.DeletionTimestamp != nil {
+		return r.finalize(ctx, environment, namespaceName)
 	}
 
-	if !controllerutil.ContainsFinalizer(workspace, FinalizerName) {
-		controllerutil.AddFinalizer(workspace, FinalizerName)
-		if err := r.Update(ctx, workspace); err != nil {
+	if !controllerutil.ContainsFinalizer(environment, FinalizerName) {
+		controllerutil.AddFinalizer(environment, FinalizerName)
+		if err := r.Update(ctx, environment); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
 
-	if err := r.ensureNamespace(ctx, workspace, namespaceName); err != nil {
+	if err := r.ensureNamespace(ctx, environment, namespaceName); err != nil {
 		if errors.Is(err, ErrNamespaceCollision) {
-			return r.notReady(ctx, workspace, namespaceName, "NamespaceCollision", err.Error(), 30*time.Second, nil)
+			return r.notReady(ctx, environment, namespaceName, "NamespaceCollision", err.Error(), 30*time.Second, nil)
 		}
-		return r.notReady(ctx, workspace, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
+		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 	}
-	if workspaceMode(workspace) == workspacev1alpha1.WorkspaceModeNamespace {
-		if err := r.ensureNamespaceKubeconfigServiceAccount(ctx, workspace, namespaceName); err != nil {
-			return r.notReady(ctx, workspace, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeNamespace {
+		if err := r.ensureNamespaceKubeconfigServiceAccount(ctx, environment, namespaceName); err != nil {
+			return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 		}
 	}
-	if workspaceMode(workspace) == workspacev1alpha1.WorkspaceModeNamespace {
-		if err := r.ensureNamespaceServiceAccountAccess(ctx, workspace, namespaceName); err != nil {
-			return r.notReady(ctx, workspace, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeNamespace {
+		if err := r.ensureNamespaceServiceAccountAccess(ctx, environment, namespaceName); err != nil {
+			return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 		}
-	} else if err := r.removeLegacyVClusterAccess(ctx, workspace, namespaceName); err != nil {
-		return r.notReady(ctx, workspace, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
+	} else if err := r.removeLegacyVClusterAccess(ctx, environment, namespaceName); err != nil {
+		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 	}
 
-	if err := r.ensureClusterQueueExists(ctx, workspace); err != nil {
+	if err := r.ensureClusterQueueExists(ctx, environment); err != nil {
 		if apierrors.IsNotFound(err) {
-			return r.notReady(ctx, workspace, namespaceName, "ClusterQueueNotFound", err.Error(), 30*time.Second, nil)
+			return r.notReady(ctx, environment, namespaceName, "ClusterQueueNotFound", err.Error(), 30*time.Second, nil)
 		}
-		return r.notReady(ctx, workspace, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
+		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 	}
 
-	queue, err := r.ensureLocalQueue(ctx, workspace, namespaceName)
+	queue, err := r.ensureLocalQueue(ctx, environment, namespaceName)
 	if err != nil {
-		return r.notReady(ctx, workspace, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
+		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 	}
 	if !localQueueActive(queue) {
-		return r.notReady(ctx, workspace, namespaceName, "QueueNotReady", "Default LocalQueue is waiting for its ClusterQueue", 5*time.Second, nil)
+		return r.notReady(ctx, environment, namespaceName, "QueueNotReady", "Default LocalQueue is waiting for its ClusterQueue", 5*time.Second, nil)
 	}
 
 	var kubeconfigSecretRef *corev1.SecretReference
-	if workspaceMode(workspace) == workspacev1alpha1.WorkspaceModeVCluster {
-		secretRef, ready, err := r.ensureVCluster(ctx, workspace, namespaceName)
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
+		secretRef, ready, err := r.ensureVCluster(ctx, environment, namespaceName)
 		if err != nil {
-			return r.notReady(ctx, workspace, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
+			return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 		}
 		if !ready {
-			return r.notReady(ctx, workspace, namespaceName, "VClusterNotReady", "vCluster control plane is starting", 5*time.Second, nil)
+			return r.notReady(ctx, environment, namespaceName, "VClusterNotReady", "vCluster control plane is starting", 5*time.Second, nil)
 		}
 		kubeconfigSecretRef = secretRef
 	} else {
-		secretRef, ready, err := r.ensureNamespaceKubeconfig(ctx, workspace, namespaceName)
+		secretRef, ready, err := r.ensureNamespaceKubeconfig(ctx, environment, namespaceName)
 		if err != nil {
-			return r.notReady(ctx, workspace, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
+			return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 		}
 		if !ready {
-			return r.notReady(ctx, workspace, namespaceName, "KubeconfigNotReady", "Service account token Secret is still being populated", 5*time.Second, nil)
+			return r.notReady(ctx, environment, namespaceName, "KubeconfigNotReady", "Service account token Secret is still being populated", 5*time.Second, nil)
 		}
 		kubeconfigSecretRef = secretRef
 	}
 
-	if err := r.setReady(ctx, workspace, namespaceName, kubeconfigSecretRef, metav1.ConditionTrue, "Ready", "Workspace is ready"); err != nil {
+	if err := r.setReady(ctx, environment, namespaceName, kubeconfigSecretRef, metav1.ConditionTrue, "Ready", "Environment is ready"); err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
 }
 
-func (r *InferenceWorkspaceReconciler) ensureNamespace(
+func (r *LLMWorkloadEnvironmentReconciler) ensureNamespace(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	name string,
 ) error {
 	namespace := &corev1.Namespace{}
@@ -153,8 +153,8 @@ func (r *InferenceWorkspaceReconciler) ensureNamespace(
 		namespace = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        name,
-				Labels:      workspaceNamespaceLabels(workspace),
-				Annotations: workspaceOwnershipAnnotations(workspace),
+				Labels:      environmentNamespaceLabels(environment),
+				Annotations: environmentOwnershipAnnotations(environment),
 			},
 		}
 		return r.Create(ctx, namespace)
@@ -162,20 +162,20 @@ func (r *InferenceWorkspaceReconciler) ensureNamespace(
 	if err != nil {
 		return err
 	}
-	if !workspaceOwns(namespace, workspace) {
+	if !environmentOwns(namespace, environment) {
 		return fmt.Errorf("%w: %s", ErrNamespaceCollision, name)
 	}
 	if namespace.Labels == nil {
 		namespace.Labels = make(map[string]string)
 	}
 	changed := false
-	for key, value := range workspaceNamespaceLabels(workspace) {
+	for key, value := range environmentNamespaceLabels(environment) {
 		if namespace.Labels[key] != value {
 			namespace.Labels[key] = value
 			changed = true
 		}
 	}
-	for key, value := range workspaceOwnershipAnnotations(workspace) {
+	for key, value := range environmentOwnershipAnnotations(environment) {
 		if namespace.Annotations == nil || namespace.Annotations[key] != value {
 			if namespace.Annotations == nil {
 				namespace.Annotations = make(map[string]string)
@@ -190,68 +190,68 @@ func (r *InferenceWorkspaceReconciler) ensureNamespace(
 	return nil
 }
 
-func workspaceNamespaceLabels(workspace *workspacev1alpha1.InferenceWorkspace) map[string]string {
+func environmentNamespaceLabels(environment *environmentv1alpha1.LLMWorkloadEnvironment) map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/managed-by":   "inference-workspace-operator",
-		"inference.redhat.com/workspace": workspace.Name,
-		KueueManagedLabel:                "true",
+		"app.kubernetes.io/managed-by": "llm-workload-environment-operator",
+		"llm.redhat.com/environment":   environment.Name,
+		KueueManagedLabel:              "true",
 	}
 }
 
-func workspaceOwnershipAnnotations(workspace *workspacev1alpha1.InferenceWorkspace) map[string]string {
+func environmentOwnershipAnnotations(environment *environmentv1alpha1.LLMWorkloadEnvironment) map[string]string {
 	return map[string]string{
-		WorkspaceOwnerAnnotation: workspace.Namespace + "/" + workspace.Name,
-		WorkspaceUIDAnnotation:   string(workspace.UID),
+		EnvironmentOwnerAnnotation: environment.Namespace + "/" + environment.Name,
+		EnvironmentUIDAnnotation:   string(environment.UID),
 	}
 }
 
-func workspaceOwns(object metav1.Object, workspace *workspacev1alpha1.InferenceWorkspace) bool {
+func environmentOwns(object metav1.Object, environment *environmentv1alpha1.LLMWorkloadEnvironment) bool {
 	annotations := object.GetAnnotations()
-	return annotations[WorkspaceOwnerAnnotation] == workspace.Namespace+"/"+workspace.Name &&
-		annotations[WorkspaceUIDAnnotation] == string(workspace.UID)
+	return annotations[EnvironmentOwnerAnnotation] == environment.Namespace+"/"+environment.Name &&
+		annotations[EnvironmentUIDAnnotation] == string(environment.UID)
 }
 
-func markWorkspaceOwned(object metav1.Object, workspace *workspacev1alpha1.InferenceWorkspace) {
+func markEnvironmentOwned(object metav1.Object, environment *environmentv1alpha1.LLMWorkloadEnvironment) {
 	annotations := object.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)
 	}
-	for key, value := range workspaceOwnershipAnnotations(workspace) {
+	for key, value := range environmentOwnershipAnnotations(environment) {
 		annotations[key] = value
 	}
 	object.SetAnnotations(annotations)
 }
 
-func (r *InferenceWorkspaceReconciler) ensureNamespaceServiceAccountAccess(
+func (r *LLMWorkloadEnvironmentReconciler) ensureNamespaceServiceAccountAccess(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
 ) error {
 	binding := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: AccessBindingName, Namespace: namespace}}
 	if err := r.Get(ctx, types.NamespacedName{Name: AccessBindingName, Namespace: namespace}, binding); err != nil && !apierrors.IsNotFound(err) {
 		return err
-	} else if err == nil && !workspaceOwns(binding, workspace) {
+	} else if err == nil && !environmentOwns(binding, environment) {
 		return fmt.Errorf("%w: %s/%s", ErrAccessBindingCollision, namespace, AccessBindingName)
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, binding, func() error {
-		binding.RoleRef = rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: WorkspaceRoleName}
+		binding.RoleRef = rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: EnvironmentRoleName}
 		binding.Subjects = []rbacv1.Subject{{
 			Kind: "ServiceAccount", Name: NamespaceKubeconfigServiceAccountName, Namespace: namespace,
 		}}
-		markWorkspaceOwned(binding, workspace)
+		markEnvironmentOwned(binding, environment)
 		return nil
 	})
 	return err
 }
 
-func (r *InferenceWorkspaceReconciler) removeLegacyVClusterAccess(
+func (r *LLMWorkloadEnvironmentReconciler) removeLegacyVClusterAccess(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
 ) error {
 	binding := &rbacv1.RoleBinding{}
 	if err := r.Get(ctx, types.NamespacedName{Name: AccessBindingName, Namespace: namespace}, binding); err == nil {
-		if workspaceOwns(binding, workspace) {
+		if environmentOwns(binding, environment) {
 			if err := r.Delete(ctx, binding); err != nil && !apierrors.IsNotFound(err) {
 				return err
 			}
@@ -261,8 +261,8 @@ func (r *InferenceWorkspaceReconciler) removeLegacyVClusterAccess(
 	}
 
 	role := &rbacv1.Role{}
-	if err := r.Get(ctx, types.NamespacedName{Name: "workspace-kubeconfig-reader", Namespace: namespace}, role); err == nil {
-		if workspaceOwns(role, workspace) {
+	if err := r.Get(ctx, types.NamespacedName{Name: "environment-kubeconfig-reader", Namespace: namespace}, role); err == nil {
+		if environmentOwns(role, environment) {
 			if err := r.Delete(ctx, role); err != nil && !apierrors.IsNotFound(err) {
 				return err
 			}
@@ -273,19 +273,19 @@ func (r *InferenceWorkspaceReconciler) removeLegacyVClusterAccess(
 	return nil
 }
 
-func (r *InferenceWorkspaceReconciler) kubeconfigSecretName(workspace *workspacev1alpha1.InferenceWorkspace) string {
-	if workspaceMode(workspace) == workspacev1alpha1.WorkspaceModeNamespace {
-		return NamespacePrefix + workspace.Name + "-kubeconfig"
+func (r *LLMWorkloadEnvironmentReconciler) kubeconfigSecretName(environment *environmentv1alpha1.LLMWorkloadEnvironment) string {
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeNamespace {
+		return NamespacePrefix + environment.Name + "-kubeconfig"
 	}
-	if r.OpenShift && workspaceMode(workspace) == workspacev1alpha1.WorkspaceModeVCluster {
-		return "vc-" + workspace.Name + "-external"
+	if r.OpenShift && environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
+		return "vc-" + environment.Name + "-external"
 	}
-	return "vc-" + workspace.Name
+	return "vc-" + environment.Name
 }
 
-func (r *InferenceWorkspaceReconciler) ensureNamespaceKubeconfigServiceAccount(
+func (r *LLMWorkloadEnvironmentReconciler) ensureNamespaceKubeconfigServiceAccount(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
 ) error {
 	serviceAccount := &corev1.ServiceAccount{}
@@ -297,19 +297,19 @@ func (r *InferenceWorkspaceReconciler) ensureNamespaceKubeconfigServiceAccount(
 		serviceAccount = &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{
 			Name: NamespaceKubeconfigServiceAccountName, Namespace: namespace,
 		}}
-	} else if !workspaceOwns(serviceAccount, workspace) {
+	} else if !environmentOwns(serviceAccount, environment) {
 		return fmt.Errorf("%w: %s/%s", ErrNamespaceKubeconfigServiceAccountCollision, namespace, NamespaceKubeconfigServiceAccountName)
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, serviceAccount, func() error {
-		markWorkspaceOwned(serviceAccount, workspace)
+		markEnvironmentOwned(serviceAccount, environment)
 		return nil
 	})
 	return err
 }
 
-func (r *InferenceWorkspaceReconciler) ensureNamespaceKubeconfig(
+func (r *LLMWorkloadEnvironmentReconciler) ensureNamespaceKubeconfig(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
 ) (*corev1.SecretReference, bool, error) {
 	tokenSecret := &corev1.Secret{}
@@ -325,7 +325,7 @@ func (r *InferenceWorkspaceReconciler) ensureNamespaceKubeconfig(
 				corev1.ServiceAccountNameKey: NamespaceKubeconfigServiceAccountName,
 			},
 		}, Type: corev1.SecretTypeServiceAccountToken}
-	} else if !workspaceOwns(tokenSecret, workspace) {
+	} else if !environmentOwns(tokenSecret, environment) {
 		return nil, false, fmt.Errorf("%w: %s/%s", ErrNamespaceKubeconfigTokenSecretCollision, namespace, NamespaceKubeconfigTokenSecretName)
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
@@ -334,14 +334,14 @@ func (r *InferenceWorkspaceReconciler) ensureNamespaceKubeconfig(
 		}
 		tokenSecret.Annotations[corev1.ServiceAccountNameKey] = NamespaceKubeconfigServiceAccountName
 		tokenSecret.Type = corev1.SecretTypeServiceAccountToken
-		markWorkspaceOwned(tokenSecret, workspace)
+		markEnvironmentOwned(tokenSecret, environment)
 		return nil
 	})
 	if err != nil {
 		return nil, false, err
 	}
 	if len(tokenSecret.Data[corev1.ServiceAccountTokenKey]) == 0 || len(tokenSecret.Data[corev1.ServiceAccountRootCAKey]) == 0 {
-		return &corev1.SecretReference{Name: r.kubeconfigSecretName(workspace), Namespace: workspace.Namespace}, false, nil
+		return &corev1.SecretReference{Name: r.kubeconfigSecretName(environment), Namespace: environment.Namespace}, false, nil
 	}
 	server, err := r.clusterAPIServerURL(ctx)
 	if err != nil {
@@ -351,35 +351,35 @@ func (r *InferenceWorkspaceReconciler) ensureNamespaceKubeconfig(
 		server,
 		tokenSecret.Data[corev1.ServiceAccountRootCAKey],
 		tokenSecret.Data[corev1.ServiceAccountTokenKey],
-		workspace.Namespace+"/"+workspace.Name,
+		environment.Namespace+"/"+environment.Name,
 		NamespaceKubeconfigServiceAccountName,
 	)
 	if err != nil {
 		return nil, false, err
 	}
 	secret := &corev1.Secret{}
-	secretKey := types.NamespacedName{Name: r.kubeconfigSecretName(workspace), Namespace: workspace.Namespace}
+	secretKey := types.NamespacedName{Name: r.kubeconfigSecretName(environment), Namespace: environment.Namespace}
 	if err := r.Get(ctx, secretKey, secret); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return nil, false, err
 		}
-		secret = &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: r.kubeconfigSecretName(workspace), Namespace: workspace.Namespace}}
-	} else if !workspaceOwns(secret, workspace) {
-		return nil, false, fmt.Errorf("%w: %s/%s", ErrKubeconfigSecretCollision, workspace.Namespace, r.kubeconfigSecretName(workspace))
+		secret = &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: r.kubeconfigSecretName(environment), Namespace: environment.Namespace}}
+	} else if !environmentOwns(secret, environment) {
+		return nil, false, fmt.Errorf("%w: %s/%s", ErrKubeconfigSecretCollision, environment.Namespace, r.kubeconfigSecretName(environment))
 	}
 	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {
 		secret.Type = corev1.SecretTypeOpaque
 		secret.Data = map[string][]byte{"config": kubeconfig}
-		markWorkspaceOwned(secret, workspace)
+		markEnvironmentOwned(secret, environment)
 		return nil
 	})
 	if err != nil {
 		return nil, false, err
 	}
-	return &corev1.SecretReference{Name: r.kubeconfigSecretName(workspace), Namespace: workspace.Namespace}, true, nil
+	return &corev1.SecretReference{Name: r.kubeconfigSecretName(environment), Namespace: environment.Namespace}, true, nil
 }
 
-func (r *InferenceWorkspaceReconciler) clusterAPIServerURL(ctx context.Context) (string, error) {
+func (r *LLMWorkloadEnvironmentReconciler) clusterAPIServerURL(ctx context.Context) (string, error) {
 	if r.OpenShift {
 		infrastructure := &unstructured.Unstructured{}
 		infrastructure.SetGroupVersionKind(openShiftInfrastructureGVK)
@@ -399,14 +399,14 @@ func (r *InferenceWorkspaceReconciler) clusterAPIServerURL(ctx context.Context) 
 	return strings.TrimRight(r.APIServerURL, "/"), nil
 }
 
-func (r *InferenceWorkspaceReconciler) ensureClusterQueueExists(ctx context.Context, workspace *workspacev1alpha1.InferenceWorkspace) error {
+func (r *LLMWorkloadEnvironmentReconciler) ensureClusterQueueExists(ctx context.Context, environment *environmentv1alpha1.LLMWorkloadEnvironment) error {
 	queue := &kueuev1beta2.ClusterQueue{}
-	return r.Get(ctx, types.NamespacedName{Name: string(requestedClusterQueue(workspace))}, queue)
+	return r.Get(ctx, types.NamespacedName{Name: string(requestedClusterQueue(environment))}, queue)
 }
 
-func (r *InferenceWorkspaceReconciler) ensureLocalQueue(
+func (r *LLMWorkloadEnvironmentReconciler) ensureLocalQueue(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
 ) (*kueuev1beta2.LocalQueue, error) {
 	queue := &kueuev1beta2.LocalQueue{
@@ -414,54 +414,54 @@ func (r *InferenceWorkspaceReconciler) ensureLocalQueue(
 	}
 	if err := r.Get(ctx, types.NamespacedName{Name: LocalQueueName, Namespace: namespace}, queue); err != nil && !apierrors.IsNotFound(err) {
 		return nil, err
-	} else if err == nil && !workspaceOwns(queue, workspace) {
+	} else if err == nil && !environmentOwns(queue, environment) {
 		return nil, fmt.Errorf("%w: %s/%s", ErrLocalQueueCollision, namespace, LocalQueueName)
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, queue, func() error {
-		queue.Spec.ClusterQueue = requestedClusterQueue(workspace)
-		markWorkspaceOwned(queue, workspace)
+		queue.Spec.ClusterQueue = requestedClusterQueue(environment)
+		markEnvironmentOwned(queue, environment)
 		return nil
 	})
 	return queue, err
 }
 
-func requestedClusterQueue(workspace *workspacev1alpha1.InferenceWorkspace) kueuev1beta2.ClusterQueueReference {
-	if workspace.Spec.ClusterQueue == "" {
+func requestedClusterQueue(environment *environmentv1alpha1.LLMWorkloadEnvironment) kueuev1beta2.ClusterQueueReference {
+	if environment.Spec.ClusterQueue == "" {
 		return kueuev1beta2.ClusterQueueReference(DefaultClusterQueueName)
 	}
-	return kueuev1beta2.ClusterQueueReference(workspace.Spec.ClusterQueue)
+	return kueuev1beta2.ClusterQueueReference(environment.Spec.ClusterQueue)
 }
 
 func localQueueActive(queue *kueuev1beta2.LocalQueue) bool {
 	return apimeta.IsStatusConditionTrue(queue.Status.Conditions, kueuev1beta2.LocalQueueActive)
 }
 
-func workspaceMode(workspace *workspacev1alpha1.InferenceWorkspace) workspacev1alpha1.WorkspaceMode {
-	if workspace.Spec.Mode == "" {
-		return workspacev1alpha1.WorkspaceModeNamespace
+func environmentMode(environment *environmentv1alpha1.LLMWorkloadEnvironment) environmentv1alpha1.EnvironmentMode {
+	if environment.Spec.Mode == "" {
+		return environmentv1alpha1.EnvironmentModeNamespace
 	}
-	return workspace.Spec.Mode
+	return environment.Spec.Mode
 }
 
-func (r *InferenceWorkspaceReconciler) ensureVCluster(
+func (r *LLMWorkloadEnvironmentReconciler) ensureVCluster(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
 ) (*corev1.SecretReference, bool, error) {
 	if r.VClusterInstaller == nil {
 		return nil, false, errors.New("vCluster installer is not configured")
 	}
-	bindingName := workspace.Name + "-vcluster"
+	bindingName := environment.Name + "-vcluster"
 	binding := &rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: bindingName}}
 	if err := r.Get(ctx, types.NamespacedName{Name: bindingName}, binding); err != nil && !apierrors.IsNotFound(err) {
 		return nil, false, fmt.Errorf("get vCluster CSI capacity binding: %w", err)
-	} else if err == nil && !workspaceOwns(binding, workspace) {
+	} else if err == nil && !environmentOwns(binding, environment) {
 		return nil, false, fmt.Errorf("%w: %s", ErrVClusterBindingCollision, bindingName)
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, binding, func() error {
 		binding.RoleRef = rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: VClusterRoleName}
-		binding.Subjects = []rbacv1.Subject{{Kind: "ServiceAccount", Name: "vc-" + workspace.Name, Namespace: namespace}}
-		markWorkspaceOwned(binding, workspace)
+		binding.Subjects = []rbacv1.Subject{{Kind: "ServiceAccount", Name: "vc-" + environment.Name, Namespace: namespace}}
+		markEnvironmentOwned(binding, environment)
 		return nil
 	})
 	if err != nil {
@@ -469,17 +469,17 @@ func (r *InferenceWorkspaceReconciler) ensureVCluster(
 	}
 	publicHost := ""
 	if r.OpenShift {
-		publicHost, err = r.openShiftVClusterHost(ctx, workspace)
+		publicHost, err = r.openShiftVClusterHost(ctx, environment)
 		if err != nil {
 			return nil, false, fmt.Errorf("discover OpenShift vCluster hostname: %w", err)
 		}
 	}
-	if err := r.VClusterInstaller.Ensure(ctx, workspace.Name, namespace, r.OpenShift, publicHost); err != nil {
+	if err := r.VClusterInstaller.Ensure(ctx, environment.Name, namespace, r.OpenShift, publicHost); err != nil {
 		return nil, false, err
 	}
 
 	statefulSet := &appsv1.StatefulSet{}
-	if err := r.Get(ctx, types.NamespacedName{Name: workspace.Name, Namespace: namespace}, statefulSet); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: environment.Name, Namespace: namespace}, statefulSet); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, false, nil
 		}
@@ -488,7 +488,7 @@ func (r *InferenceWorkspaceReconciler) ensureVCluster(
 	if statefulSet.Status.ReadyReplicas < 1 {
 		return nil, false, nil
 	}
-	secretName := "vc-" + workspace.Name
+	secretName := "vc-" + environment.Name
 	secret := &corev1.Secret{}
 	if err := r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: namespace}, secret); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -498,32 +498,32 @@ func (r *InferenceWorkspaceReconciler) ensureVCluster(
 	}
 
 	if !r.OpenShift {
-		publicSecret, err := r.ensurePublicVClusterKubeconfig(ctx, workspace, secret, nil)
+		publicSecret, err := r.ensurePublicVClusterKubeconfig(ctx, environment, secret, nil)
 		if err != nil {
 			return nil, false, err
 		}
 		return publicSecret, true, nil
 	}
 
-	publicSecret, err := r.ensureOpenShiftVClusterEndpoint(ctx, workspace, namespace, secret)
+	publicSecret, err := r.ensureOpenShiftVClusterEndpoint(ctx, environment, namespace, secret)
 	if err != nil {
 		return nil, false, err
 	}
 	return publicSecret, true, nil
 }
 
-func (r *InferenceWorkspaceReconciler) ensureOpenShiftVClusterEndpoint(
+func (r *LLMWorkloadEnvironmentReconciler) ensureOpenShiftVClusterEndpoint(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
 	internalSecret *corev1.Secret,
 ) (*corev1.SecretReference, error) {
-	host, err := r.openShiftVClusterHost(ctx, workspace)
+	host, err := r.openShiftVClusterHost(ctx, environment)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := r.ensureOpenShiftRoute(ctx, workspace, namespace, host); err != nil {
+	if err := r.ensureOpenShiftRoute(ctx, environment, namespace, host); err != nil {
 		return nil, err
 	}
 
@@ -535,29 +535,29 @@ func (r *InferenceWorkspaceReconciler) ensureOpenShiftVClusterEndpoint(
 	if err != nil {
 		return nil, fmt.Errorf("rewrite vCluster kubeconfig for Route %s: %w", host, err)
 	}
-	return r.ensurePublicVClusterKubeconfig(ctx, workspace, internalSecret, rewrittenKubeconfig)
+	return r.ensurePublicVClusterKubeconfig(ctx, environment, internalSecret, rewrittenKubeconfig)
 }
 
-func (r *InferenceWorkspaceReconciler) ensurePublicVClusterKubeconfig(
+func (r *LLMWorkloadEnvironmentReconciler) ensurePublicVClusterKubeconfig(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	internalSecret *corev1.Secret,
 	rewrittenKubeconfig []byte,
 ) (*corev1.SecretReference, error) {
-	secretName := r.kubeconfigSecretName(workspace)
+	secretName := r.kubeconfigSecretName(environment)
 	publicSecret := &corev1.Secret{}
 	secretKey := kubeconfigSecretKey(internalSecret)
 	if secretKey == "" {
 		return nil, fmt.Errorf("vCluster Secret %s/%s does not contain a kubeconfig in %q or %q", internalSecret.Namespace, internalSecret.Name, VClusterKubeconfigKey, "kubeconfig")
 	}
-	secretKeyRef := types.NamespacedName{Name: secretName, Namespace: workspace.Namespace}
+	secretKeyRef := types.NamespacedName{Name: secretName, Namespace: environment.Namespace}
 	if err := r.Get(ctx, secretKeyRef, publicSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf("get public vCluster kubeconfig Secret: %w", err)
 		}
-		publicSecret = &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: workspace.Namespace}}
-	} else if !workspaceOwns(publicSecret, workspace) {
-		return nil, fmt.Errorf("%w: %s/%s", ErrKubeconfigSecretCollision, workspace.Namespace, secretName)
+		publicSecret = &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: environment.Namespace}}
+	} else if !environmentOwns(publicSecret, environment) {
+		return nil, fmt.Errorf("%w: %s/%s", ErrKubeconfigSecretCollision, environment.Namespace, secretName)
 	}
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, publicSecret, func() error {
 		publicSecret.Type = internalSecret.Type
@@ -565,28 +565,28 @@ func (r *InferenceWorkspaceReconciler) ensurePublicVClusterKubeconfig(
 		if len(rewrittenKubeconfig) > 0 {
 			publicSecret.Data[secretKey] = append([]byte(nil), rewrittenKubeconfig...)
 		}
-		markWorkspaceOwned(publicSecret, workspace)
+		markEnvironmentOwned(publicSecret, environment)
 		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("ensure public vCluster kubeconfig Secret: %w", err)
 	}
 
-	return &corev1.SecretReference{Name: secretName, Namespace: workspace.Namespace}, nil
+	return &corev1.SecretReference{Name: secretName, Namespace: environment.Namespace}, nil
 }
 
-func (r *InferenceWorkspaceReconciler) openShiftVClusterHost(
+func (r *LLMWorkloadEnvironmentReconciler) openShiftVClusterHost(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 ) (string, error) {
 	appsDomain, err := r.openShiftAppsDomain(ctx)
 	if err != nil {
 		return "", fmt.Errorf("discover OpenShift applications domain: %w", err)
 	}
-	return workspace.Name + "." + appsDomain, nil
+	return environment.Name + "." + appsDomain, nil
 }
 
-func (r *InferenceWorkspaceReconciler) openShiftAppsDomain(ctx context.Context) (string, error) {
+func (r *LLMWorkloadEnvironmentReconciler) openShiftAppsDomain(ctx context.Context) (string, error) {
 	ingress := &unstructured.Unstructured{}
 	ingress.SetGroupVersionKind(openShiftIngressGVK)
 	if err := r.Get(ctx, types.NamespacedName{Name: "cluster"}, ingress); err != nil {
@@ -605,33 +605,33 @@ func (r *InferenceWorkspaceReconciler) openShiftAppsDomain(ctx context.Context) 
 	return "", errors.New("OpenShift Ingress object does not publish an applications domain")
 }
 
-func (r *InferenceWorkspaceReconciler) ensureOpenShiftRoute(
+func (r *LLMWorkloadEnvironmentReconciler) ensureOpenShiftRoute(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
 	host string,
 ) error {
 	route := &unstructured.Unstructured{}
 	route.SetGroupVersionKind(openShiftRouteGVK)
-	routeKey := types.NamespacedName{Name: workspace.Name, Namespace: namespace}
+	routeKey := types.NamespacedName{Name: environment.Name, Namespace: namespace}
 	if err := r.Get(ctx, routeKey, route); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("get vCluster Route: %w", err)
 		}
-		route = desiredOpenShiftRoute(workspace.Name, namespace, host)
-		markWorkspaceOwned(route, workspace)
+		route = desiredOpenShiftRoute(environment.Name, namespace, host)
+		markEnvironmentOwned(route, environment)
 		if err := r.Create(ctx, route); err != nil {
 			return fmt.Errorf("create vCluster Route: %w", err)
 		}
 		return nil
 	}
-	if !workspaceOwns(route, workspace) {
-		return fmt.Errorf("%w: %s/%s", ErrRouteCollision, namespace, workspace.Name)
+	if !environmentOwns(route, environment) {
+		return fmt.Errorf("%w: %s/%s", ErrRouteCollision, namespace, environment.Name)
 	}
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
-		route.Object["spec"] = desiredOpenShiftRoute(workspace.Name, namespace, host).Object["spec"]
-		markWorkspaceOwned(route, workspace)
+		route.Object["spec"] = desiredOpenShiftRoute(environment.Name, namespace, host).Object["spec"]
+		markEnvironmentOwned(route, environment)
 		return nil
 	})
 	if err != nil {
@@ -683,55 +683,55 @@ func copySecretData(data map[string][]byte) map[string][]byte {
 	return copy
 }
 
-func (r *InferenceWorkspaceReconciler) notReady(
+func (r *LLMWorkloadEnvironmentReconciler) notReady(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespaceName string,
 	reason string,
 	message string,
 	requeueAfter time.Duration,
 	reconcileErr error,
 ) (ctrl.Result, error) {
-	if err := r.setReady(ctx, workspace, namespaceName, nil, metav1.ConditionFalse, reason, message); err != nil {
+	if err := r.setReady(ctx, environment, namespaceName, nil, metav1.ConditionFalse, reason, message); err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{RequeueAfter: requeueAfter}, reconcileErr
 }
 
-func (r *InferenceWorkspaceReconciler) setReady(
+func (r *LLMWorkloadEnvironmentReconciler) setReady(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespaceName string,
 	kubeconfigSecretRef *corev1.SecretReference,
 	status metav1.ConditionStatus,
 	reason string,
 	message string,
 ) error {
-	before := workspace.DeepCopy()
-	workspace.Status.NamespaceRef = &corev1.LocalObjectReference{Name: namespaceName}
-	workspace.Status.KubeconfigSecretRef = kubeconfigSecretRef
-	apimeta.SetStatusCondition(&workspace.Status.Conditions, metav1.Condition{
-		Type:               workspacev1alpha1.ReadyCondition,
+	before := environment.DeepCopy()
+	environment.Status.NamespaceRef = &corev1.LocalObjectReference{Name: namespaceName}
+	environment.Status.KubeconfigSecretRef = kubeconfigSecretRef
+	apimeta.SetStatusCondition(&environment.Status.Conditions, metav1.Condition{
+		Type:               environmentv1alpha1.ReadyCondition,
 		Status:             status,
-		ObservedGeneration: workspace.Generation,
+		ObservedGeneration: environment.Generation,
 		Reason:             reason,
 		Message:            message,
 	})
-	return r.Status().Patch(ctx, workspace, client.MergeFrom(before))
+	return r.Status().Patch(ctx, environment, client.MergeFrom(before))
 }
 
-func (r *InferenceWorkspaceReconciler) finalize(
+func (r *LLMWorkloadEnvironmentReconciler) finalize(
 	ctx context.Context,
-	workspace *workspacev1alpha1.InferenceWorkspace,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespaceName string,
 ) (ctrl.Result, error) {
-	if !controllerutil.ContainsFinalizer(workspace, FinalizerName) {
+	if !controllerutil.ContainsFinalizer(environment, FinalizerName) {
 		return ctrl.Result{}, nil
 	}
 
 	kubeconfigSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: r.kubeconfigSecretName(workspace), Namespace: workspace.Namespace}, kubeconfigSecret); err == nil {
-		if workspaceOwns(kubeconfigSecret, workspace) {
+	if err := r.Get(ctx, types.NamespacedName{Name: r.kubeconfigSecretName(environment), Namespace: environment.Namespace}, kubeconfigSecret); err == nil {
+		if environmentOwns(kubeconfigSecret, environment) {
 			if err := r.Delete(ctx, kubeconfigSecret); err != nil && !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, err
 			}
@@ -742,9 +742,9 @@ func (r *InferenceWorkspaceReconciler) finalize(
 	}
 
 	binding := &rbacv1.ClusterRoleBinding{}
-	bindingName := workspace.Name + "-vcluster"
+	bindingName := environment.Name + "-vcluster"
 	err := r.Get(ctx, types.NamespacedName{Name: bindingName}, binding)
-	if err == nil && workspaceOwns(binding, workspace) {
+	if err == nil && environmentOwns(binding, environment) {
 		if err := r.Delete(ctx, binding); err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}
@@ -756,7 +756,7 @@ func (r *InferenceWorkspaceReconciler) finalize(
 
 	namespace := &corev1.Namespace{}
 	err = r.Get(ctx, types.NamespacedName{Name: namespaceName}, namespace)
-	if err == nil && workspaceOwns(namespace, workspace) {
+	if err == nil && environmentOwns(namespace, environment) {
 		if namespace.DeletionTimestamp == nil {
 			if err := r.Delete(ctx, namespace); err != nil && !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, err
@@ -768,12 +768,12 @@ func (r *InferenceWorkspaceReconciler) finalize(
 		return ctrl.Result{}, err
 	}
 
-	controllerutil.RemoveFinalizer(workspace, FinalizerName)
-	return ctrl.Result{}, r.Update(ctx, workspace)
+	controllerutil.RemoveFinalizer(environment, FinalizerName)
+	return ctrl.Result{}, r.Update(ctx, environment)
 }
 
-func (r *InferenceWorkspaceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *LLMWorkloadEnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&workspacev1alpha1.InferenceWorkspace{}).
+		For(&environmentv1alpha1.LLMWorkloadEnvironment{}).
 		Complete(r)
 }

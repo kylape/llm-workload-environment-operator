@@ -1,27 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: inference-workspace-operator
-  namespace: inference-workspace-operator
+  name: llm-workload-environment-operator
+  namespace: llm-workload-environment-operator
   labels:
-    app.kubernetes.io/name: inference-workspace-operator
+    app.kubernetes.io/name: llm-workload-environment-operator
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: inference-workspace-operator
+      app.kubernetes.io/name: llm-workload-environment-operator
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: inference-workspace-operator
+        app.kubernetes.io/name: llm-workload-environment-operator
     spec:
-      serviceAccountName: inference-workspace-operator
+      serviceAccountName: llm-workload-environment-operator
       containers:
         - args:
             - --leader-elect
             - --metrics-bind-address=:8443
             - --health-probe-bind-address=:8081
-          image: quay.io/klape/inference-workspace-operator:45afba7
+          image: quay.io/klape/llm-workload-environment-operator:latest
           name: manager
           ports:
             - containerPort: 8081

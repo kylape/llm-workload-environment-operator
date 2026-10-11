@@ -1,4 +1,4 @@
-// Package v1alpha1 contains the InferenceWorkspace API.
+// Package v1alpha1 contains the LLMWorkloadEnvironment API.
 // +kubebuilder:object:generate=true
-// +groupName=inference.redhat.com
+// +groupName=llm.redhat.com
 package v1alpha1

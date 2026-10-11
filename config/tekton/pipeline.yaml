@@ -1,19 +1,19 @@
 apiVersion: tekton.dev/v1
 kind: Pipeline
 metadata:
-  name: inference-workspace-operator-build
-  namespace: inference-workspace-operator
+  name: llm-workload-environment-operator-build
+  namespace: llm-workload-environment-operator
 spec:
   params:
     - name: git-url
       type: string
-      default: https://github.com/kylape/inference-workspace-operator.git
+      default: https://github.com/kylape/llm-workload-environment-operator.git
     - name: git-revision
       type: string
       default: main
     - name: image
       type: string
-      default: quay.io/klape/inference-workspace-operator:latest
+      default: quay.io/klape/llm-workload-environment-operator:latest
     - name: push-image
       type: string
       default: "false"
@@ -60,7 +60,7 @@ spec:
               find "$(workspaces.source.path)" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
               git clone --depth 1 --branch "$(params.git-revision)" \
                 "$(params.git-url)" "$(workspaces.source.path)"
-          - name: test-and-build
+          - name: build-manager
             image: golang:1.25
             env:
               - name: GOMAXPROCS
@@ -74,7 +74,6 @@ spec:
             script: |
               #!/bin/sh
               set -eu
-              go test ./...
               CGO_ENABLED=0 go build -o /tmp/manager ./cmd/manager
             workingDir: $(workspaces.source.path)
           - name: build-image

@@ -7,21 +7,21 @@ import (
 
 const ReadyCondition = "Ready"
 
-type WorkspaceMode string
+type EnvironmentMode string
 
 const (
-	WorkspaceModeNamespace WorkspaceMode = "Namespace"
-	WorkspaceModeVCluster  WorkspaceMode = "VCluster"
+	EnvironmentModeNamespace EnvironmentMode = "Namespace"
+	EnvironmentModeVCluster  EnvironmentMode = "VCluster"
 )
 
-type InferenceWorkspaceSpec struct {
+type LLMWorkloadEnvironmentSpec struct {
 	// Mode selects a direct host namespace or an isolated vCluster.
 	// +kubebuilder:default=Namespace
 	// +kubebuilder:validation:Enum=Namespace;VCluster
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="mode is immutable"
-	Mode WorkspaceMode `json:"mode,omitempty"`
+	Mode EnvironmentMode `json:"mode,omitempty"`
 
-	// ClusterQueue is the Kueue ClusterQueue that backs the workspace's
+	// ClusterQueue is the Kueue ClusterQueue that backs the environment's
 	// default LocalQueue.
 	// +kubebuilder:default=inference-workspaces
 	// +kubebuilder:validation:MaxLength=253
@@ -30,11 +30,11 @@ type InferenceWorkspaceSpec struct {
 	ClusterQueue string `json:"clusterQueue,omitempty"`
 }
 
-type InferenceWorkspaceStatus struct {
+type LLMWorkloadEnvironmentStatus struct {
 	// NamespaceRef identifies the backing host-cluster namespace.
 	NamespaceRef *corev1.LocalObjectReference `json:"namespaceRef,omitempty"`
 
-	// KubeconfigSecretRef references credentials for a ready workspace.
+	// KubeconfigSecretRef references credentials for a ready environment.
 	KubeconfigSecretRef *corev1.SecretReference `json:"kubeconfigSecretRef,omitempty"`
 
 	// Conditions contains the aggregate Ready condition.
@@ -44,27 +44,27 @@ type InferenceWorkspaceStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Namespaced,shortName=iw
+// +kubebuilder:resource:scope=Namespaced,shortName=llmwe
 // +kubebuilder:subresource:status
-// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 53",message="workspace names must be at most 53 characters to allow the workspace- prefix"
+// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 53",message="environment names must be at most 53 characters to allow the environment- prefix"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.namespaceRef.name"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
-type InferenceWorkspace struct {
+type LLMWorkloadEnvironment struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   InferenceWorkspaceSpec   `json:"spec,omitempty"`
-	Status InferenceWorkspaceStatus `json:"status,omitempty"`
+	Spec   LLMWorkloadEnvironmentSpec   `json:"spec,omitempty"`
+	Status LLMWorkloadEnvironmentStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
-type InferenceWorkspaceList struct {
+type LLMWorkloadEnvironmentList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []InferenceWorkspace `json:"items"`
+	Items           []LLMWorkloadEnvironment `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&InferenceWorkspace{}, &InferenceWorkspaceList{})
+	SchemeBuilder.Register(&LLMWorkloadEnvironment{}, &LLMWorkloadEnvironmentList{})
 }
