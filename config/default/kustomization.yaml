@@ -1,11 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ../crd/bases/llm.redhat.com_llmworkloadenvironments.yaml
-  - ../rbac/service_account.yaml
-  - ../rbac/role.yaml
-  - ../rbac/role_binding.yaml
-  - ../rbac/requester_role.yaml
-  - ../rbac/environment_role.yaml
-  - ../rbac/vcluster_role.yaml
-  - ../manager/deployment.yaml
+  - ../crd
+  - ../rbac
+  - ../manager
