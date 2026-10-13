@@ -270,22 +270,22 @@ func TestEnsureNamespaceKubeconfig(t *testing.T) {
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(environment, tokenSecret).Build()
 	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme, APIServerURL: "https://api.example.test/"}
 
-	secretRef, ready, err := reconciler.ensureNamespaceKubeconfig(ctx, environment, namespace)
+	kubeconfig, ready, err := reconciler.ensureNamespaceKubeconfig(ctx, environment, namespace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ready || secretRef == nil || secretRef.Name != "environment-example-kubeconfig" || secretRef.Namespace != environment.Namespace {
-		t.Fatalf("unexpected namespace kubeconfig result: ready=%v ref=%#v", ready, secretRef)
+	if !ready || len(kubeconfig) == 0 {
+		t.Fatalf("unexpected namespace kubeconfig result: ready=%v kubeconfig=%q", ready, kubeconfig)
 	}
-	kubeconfig := &corev1.Secret{}
-	if err := client.Get(ctx, types.NamespacedName{Name: "environment-example-kubeconfig", Namespace: environment.Namespace}, kubeconfig); err != nil {
-		t.Fatal(err)
-	}
-	contents := string(kubeconfig.Data["config"])
+	contents := string(kubeconfig)
 	for _, expected := range []string{"https://api.example.test", "token-value", "Y2EtdmFsdWU="} {
 		if !strings.Contains(contents, expected) {
 			t.Fatalf("kubeconfig does not contain %q: %s", expected, contents)
 		}
+	}
+	legacySecret := &corev1.Secret{}
+	if err := client.Get(ctx, types.NamespacedName{Name: "environment-example-kubeconfig", Namespace: environment.Namespace}, legacySecret); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected no published kubeconfig Secret, got secret=%#v err=%v", legacySecret, err)
 	}
 }
 
@@ -377,12 +377,12 @@ func TestEnsureVClusterUsesDetectedPlatformAndScopedBinding(t *testing.T) {
 		OpenShift:         true,
 	}
 
-	secretRef, ready, err := reconciler.ensureVCluster(ctx, environment, namespace)
+	kubeconfig, ready, err := reconciler.ensureVCluster(ctx, environment, namespace)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !ready || secretRef == nil || secretRef.Name != "vc-example-external" || secretRef.Namespace != environment.Namespace {
-		t.Fatalf("unexpected vCluster readiness: ready=%v secretRef=%#v", ready, secretRef)
+	if !ready || len(kubeconfig) == 0 {
+		t.Fatalf("unexpected vCluster readiness: ready=%v kubeconfig=%q", ready, kubeconfig)
 	}
 	if installer.calls != 1 || !installer.openShift || installer.publicHost != "example.apps.example.test" {
 		t.Fatalf("installer did not receive OpenShift detection: %#v", installer)
@@ -409,12 +409,12 @@ func TestEnsureVClusterUsesDetectedPlatformAndScopedBinding(t *testing.T) {
 	if termination, _, _ := unstructured.NestedString(route.Object, "spec", "tls", "termination"); termination != "passthrough" {
 		t.Fatalf("Route TLS termination = %q, want passthrough", termination)
 	}
-	publicSecret := &corev1.Secret{}
-	if err := client.Get(ctx, types.NamespacedName{Name: "vc-example-external", Namespace: environment.Namespace}, publicSecret); err != nil {
-		t.Fatalf("public kubeconfig Secret: %v", err)
+	if !containsString(string(kubeconfig), "https://example.apps.example.test") {
+		t.Fatalf("public kubeconfig server was not rewritten: %s", kubeconfig)
 	}
-	if !containsString(string(publicSecret.Data["config"]), "https://example.apps.example.test") {
-		t.Fatalf("public kubeconfig server was not rewritten: %s", publicSecret.Data["config"])
+	legacySecret := &corev1.Secret{}
+	if err := client.Get(ctx, types.NamespacedName{Name: "vc-example-external", Namespace: environment.Namespace}, legacySecret); !apierrors.IsNotFound(err) {
+		t.Fatalf("expected no published vCluster kubeconfig Secret, got secret=%#v err=%v", legacySecret, err)
 	}
 }
 

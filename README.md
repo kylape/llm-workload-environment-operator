@@ -42,17 +42,16 @@ Creating this resource provisions:
   `inference-workspaces` ClusterQueue.
 
 In `Namespace` mode, the operator also creates a dedicated ServiceAccount in
-the backing namespace and publishes a host-cluster kubeconfig Secret in the
-`LLMWorkloadEnvironment`'s namespace. The kubeconfig Secret reference is available
-in status after Kubernetes has populated the ServiceAccount token.
+the backing namespace. Once Kubernetes has populated its token Secret, the operator
+publishes the base64-encoded kubeconfig in `status.kubeconfig`.
 
 For `VCluster` mode, the operator also installs the pinned vCluster chart and
-publishes its kubeconfig Secret reference in status. On OpenShift, it also
-creates a TLS-passthrough Route at
+publishes its base64-encoded kubeconfig in status. On OpenShift, it also creates a
+TLS-passthrough Route at
 `<environment-name>.<cluster-applications-domain>` and publishes an
-operator-managed copy of the kubeconfig with that public server URL. The copy
-retains the CA and certificate data provided by vCluster; certificate SAN
-handling for the public hostname is intentionally left for a later iteration.
+updated kubeconfig with that public server URL. It retains the CA and certificate
+data provided by vCluster; certificate SAN handling for the public hostname is
+intentionally left for a later iteration.
 The vCluster can read host-cluster `StorageClass` and `CSIStorageCapacity`
 objects through a dedicated read-only role. The chart's own cluster-wide RBAC
 is disabled.
@@ -65,9 +64,18 @@ An omitted `spec.clusterQueue` resolves to `inference-workspaces`, which must al
 be listed. Rejected requests report the reason in the `Ready` status condition.
 
 The operator does not grant access to arbitrary identities from the
-`LLMWorkloadEnvironment` spec. Existing namespace RBAC determines who may create an
-environment and read its kubeconfig Secret. The operator-generated Namespace-mode
-ServiceAccount is the only identity it binds to the environment role.
+`LLMWorkloadEnvironment` spec. Existing namespace RBAC determines who may read an
+environment; readers can retrieve its kubeconfig from status. The
+operator-generated Namespace-mode ServiceAccount is the only identity it binds to
+the environment role.
+
+Retrieve a ready environment's kubeconfig with:
+
+```bash
+umask 077
+kubectl get llmworkloadenvironment alice-test -n alice-dev \
+  -o jsonpath='{.status.kubeconfig}' | base64 --decode > kubeconfig
+```
 
 ## Development
 

@@ -34,8 +34,8 @@ type LLMWorkloadEnvironmentStatus struct {
 	// NamespaceRef identifies the backing host-cluster namespace.
 	NamespaceRef *corev1.LocalObjectReference `json:"namespaceRef,omitempty"`
 
-	// KubeconfigSecretRef references credentials for a ready environment.
-	KubeconfigSecretRef *corev1.SecretReference `json:"kubeconfigSecretRef,omitempty"`
+	// Kubeconfig contains the base64-encoded kubeconfig for a ready environment.
+	Kubeconfig []byte `json:"kubeconfig,omitempty"`
 
 	// Conditions contains the aggregate Ready condition.
 	// +listType=map

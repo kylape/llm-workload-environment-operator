@@ -92,10 +92,10 @@ func (in *LLMWorkloadEnvironmentStatus) DeepCopyInto(out *LLMWorkloadEnvironment
 		*out = new(v1.LocalObjectReference)
 		**out = **in
 	}
-	if in.KubeconfigSecretRef != nil {
-		in, out := &in.KubeconfigSecretRef, &out.KubeconfigSecretRef
-		*out = new(v1.SecretReference)
-		**out = **in
+	if in.Kubeconfig != nil {
+		in, out := &in.Kubeconfig, &out.Kubeconfig
+		*out = make([]byte, len(*in))
+		copy(*out, *in)
 	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions

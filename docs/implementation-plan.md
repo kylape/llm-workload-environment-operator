@@ -35,9 +35,8 @@ spec:
 `Namespace`. The `infra` service account may receive cluster-wide CRUD access
 to the namespaced environment resources. Direct users can instead receive CRUD
 access only within a GitOps-provisioned control namespace. Existing namespace
-RBAC determines who may create environments and read their kubeconfig Secrets;
-the operator does not grant access to arbitrary identities named by an
-environment request.
+RBAC determines who may read an environment and its kubeconfig; the operator does
+not grant access to arbitrary identities named by an environment request.
 
 ## Namespace reconciliation
 
@@ -58,13 +57,11 @@ and Kueue queue mutation. It grants read-only access to the environment's
 LocalQueue and Workloads so users can inspect admission state. Users that
 require their own CRDs use vCluster mode.
 
-The operator creates a dedicated ServiceAccount in the backing namespace,
-binds it to the same environment role, and creates a kubeconfig Secret for that
-ServiceAccount in the namespace containing the `LLMWorkloadEnvironment`. The
-kubeconfig uses the host cluster API endpoint and is published through
-`status.kubeconfigSecretRef` after the ServiceAccount token and CA have been
-populated. The requester receives no additional access; its existing RBAC must
-permit reading the Secret.
+The operator creates a dedicated ServiceAccount in the backing namespace and
+binds it to the same environment role. Once Kubernetes populates the ServiceAccount
+token and CA, the operator builds a host-cluster kubeconfig and publishes it as
+base64-encoded `status.kubeconfig`. Anyone allowed to read the LWE can use that
+environment; no Secret read permission is needed in the control namespace.
 
 The environment role is intentionally defined by this operator instead of using
 the built-in `admin` or `edit` roles. Those roles are dynamically extended by
@@ -114,18 +111,16 @@ on Kubernetes it leaves the profile at the chart default. Discovery errors are
 fatal so an incompatible profile is never selected silently.
 
 The vCluster kubeconfig grants access to the virtual cluster and must not
-contain host cluster credentials. Its Secret reference is published in
-`status.kubeconfigSecretRef` only after both the control plane and credential
-are ready. The operator copies the kubeconfig into the namespace containing
-the `LLMWorkloadEnvironment`; existing namespace RBAC must permit the requester to
-read that Secret. The requester receives no other access to the host backing
-namespace.
+contain host cluster credentials. The operator publishes the base64-encoded
+kubeconfig in `status.kubeconfig` only after both the control plane and credential
+are ready. Anyone allowed to read the LWE can use that environment; the requester
+receives no other access to the host backing namespace.
 
 On OpenShift, the operator reads the cluster applications domain from the
 cluster-scoped Ingress configuration and creates a Route named after the
 environment. The Route uses TLS passthrough to preserve the certificate and CA
 provided by vCluster. The operator leaves the Helm-created kubeconfig Secret
-unchanged and creates an operator-owned copy whose server URL is
+unchanged and publishes a kubeconfig in status whose server URL is
 `https://<environment-name>.<cluster-applications-domain>`. The public hostname
 is explicit rather than relying on the generated
 `<route-name>-<namespace>` form. Certificate SAN configuration for that
@@ -140,9 +135,7 @@ Status remains deliberately compact:
 status:
   namespaceRef:
     name: env-alice-test
-  kubeconfigSecretRef:
-    namespace: alice-dev
-    name: environment-alice-test-kubeconfig # Namespace mode; vCluster uses vc-... here
+  kubeconfig: <base64-encoded kubeconfig>
   conditions:
     - type: Ready
       status: "True"
@@ -151,9 +144,9 @@ status:
       message: Environment is ready
 ```
 
-`kubeconfigSecretRef` is populated for a ready environment. Namespace environments
-wait for the ServiceAccount token Secret; vCluster environments wait for the
-control plane and vCluster credential. `Ready=False` communicates failures
+`kubeconfig` is populated for a ready environment. Namespace environments wait
+for the ServiceAccount token Secret; vCluster environments wait for the control
+plane and vCluster credential. `Ready=False` communicates failures
 through specific reasons such as `NamespaceCollision`, `ClusterQueueNotFound`,
 `QueueNotReady`, `KubeconfigNotReady`, `VClusterNotReady`, or
 `ReconciliationFailed`.

@@ -28,7 +28,6 @@ import (
 const (
 	FinalizerName                         = "llm.redhat.com/environment-cleanup"
 	NamespacePrefix                       = "env-"
-	NamespaceKubeconfigSecretPrefix       = "environment-"
 	EnvironmentOwnerAnnotation            = "llm.redhat.com/environment-owner"
 	EnvironmentUIDAnnotation              = "llm.redhat.com/environment-uid"
 	AllowedClusterQueuesAnnotation        = "llm.redhat.com/allowed-cluster-queues"
@@ -45,7 +44,6 @@ const (
 
 var ErrNamespaceCollision = errors.New("environment namespace already exists and is not controlled by this environment")
 var ErrRouteCollision = errors.New("vCluster Route already exists and is not controlled by this environment")
-var ErrKubeconfigSecretCollision = errors.New("public vCluster kubeconfig Secret already exists and is not controlled by this environment")
 var ErrVClusterBindingCollision = errors.New("vCluster ClusterRoleBinding already exists and is not controlled by this environment")
 var ErrAccessBindingCollision = errors.New("environment access RoleBinding already exists and is not controlled by this environment")
 var ErrLocalQueueCollision = errors.New("environment LocalQueue already exists and is not controlled by this environment")
@@ -81,6 +79,9 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
+	}
+	if err := r.removeLegacyKubeconfigSecret(ctx, environment); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	reason, message, err := r.validateClusterQueue(ctx, environment)
@@ -118,28 +119,28 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 		return r.notReady(ctx, environment, namespaceName, "QueueNotReady", "Default LocalQueue is waiting for its ClusterQueue", 5*time.Second, nil)
 	}
 
-	var kubeconfigSecretRef *corev1.SecretReference
+	var kubeconfig []byte
 	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
-		secretRef, ready, err := r.ensureVCluster(ctx, environment, namespaceName)
+		config, ready, err := r.ensureVCluster(ctx, environment, namespaceName)
 		if err != nil {
 			return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 		}
 		if !ready {
 			return r.notReady(ctx, environment, namespaceName, "VClusterNotReady", "vCluster control plane is starting", 5*time.Second, nil)
 		}
-		kubeconfigSecretRef = secretRef
+		kubeconfig = config
 	} else {
-		secretRef, ready, err := r.ensureNamespaceKubeconfig(ctx, environment, namespaceName)
+		config, ready, err := r.ensureNamespaceKubeconfig(ctx, environment, namespaceName)
 		if err != nil {
 			return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 		}
 		if !ready {
 			return r.notReady(ctx, environment, namespaceName, "KubeconfigNotReady", "Service account token Secret is still being populated", 5*time.Second, nil)
 		}
-		kubeconfigSecretRef = secretRef
+		kubeconfig = config
 	}
 
-	if err := r.setReady(ctx, environment, namespaceName, kubeconfigSecretRef, metav1.ConditionTrue, "Ready", "Environment is ready"); err != nil {
+	if err := r.setReady(ctx, environment, namespaceName, kubeconfig, metav1.ConditionTrue, "Ready", "Environment is ready"); err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
@@ -276,14 +277,32 @@ func (r *LLMWorkloadEnvironmentReconciler) removeLegacyVClusterAccess(
 	return nil
 }
 
-func (r *LLMWorkloadEnvironmentReconciler) kubeconfigSecretName(environment *environmentv1alpha1.LLMWorkloadEnvironment) string {
+func (r *LLMWorkloadEnvironmentReconciler) legacyKubeconfigSecretName(environment *environmentv1alpha1.LLMWorkloadEnvironment) string {
 	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeNamespace {
-		return NamespaceKubeconfigSecretPrefix + environment.Name + "-kubeconfig"
+		return "environment-" + environment.Name + "-kubeconfig"
 	}
 	if r.OpenShift && environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
 		return "vc-" + environment.Name + "-external"
 	}
 	return "vc-" + environment.Name
+}
+
+func (r *LLMWorkloadEnvironmentReconciler) removeLegacyKubeconfigSecret(
+	ctx context.Context,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
+) error {
+	secret := &corev1.Secret{}
+	key := types.NamespacedName{Name: r.legacyKubeconfigSecretName(environment), Namespace: environment.Namespace}
+	if err := r.Get(ctx, key, secret); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+	if !environmentOwns(secret, environment) {
+		return nil
+	}
+	if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("delete legacy kubeconfig Secret %s/%s: %w", key.Namespace, key.Name, err)
+	}
+	return nil
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) ensureNamespaceKubeconfigServiceAccount(
@@ -314,7 +333,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespaceKubeconfig(
 	ctx context.Context,
 	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
-) (*corev1.SecretReference, bool, error) {
+) ([]byte, bool, error) {
 	tokenSecret := &corev1.Secret{}
 	tokenKey := types.NamespacedName{Name: NamespaceKubeconfigTokenSecretName, Namespace: namespace}
 	if err := r.Get(ctx, tokenKey, tokenSecret); err != nil {
@@ -344,7 +363,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespaceKubeconfig(
 		return nil, false, err
 	}
 	if len(tokenSecret.Data[corev1.ServiceAccountTokenKey]) == 0 || len(tokenSecret.Data[corev1.ServiceAccountRootCAKey]) == 0 {
-		return &corev1.SecretReference{Name: r.kubeconfigSecretName(environment), Namespace: environment.Namespace}, false, nil
+		return nil, false, nil
 	}
 	server, err := r.clusterAPIServerURL(ctx)
 	if err != nil {
@@ -360,26 +379,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespaceKubeconfig(
 	if err != nil {
 		return nil, false, err
 	}
-	secret := &corev1.Secret{}
-	secretKey := types.NamespacedName{Name: r.kubeconfigSecretName(environment), Namespace: environment.Namespace}
-	if err := r.Get(ctx, secretKey, secret); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return nil, false, err
-		}
-		secret = &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: r.kubeconfigSecretName(environment), Namespace: environment.Namespace}}
-	} else if !environmentOwns(secret, environment) {
-		return nil, false, fmt.Errorf("%w: %s/%s", ErrKubeconfigSecretCollision, environment.Namespace, r.kubeconfigSecretName(environment))
-	}
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, secret, func() error {
-		secret.Type = corev1.SecretTypeOpaque
-		secret.Data = map[string][]byte{"config": kubeconfig}
-		markEnvironmentOwned(secret, environment)
-		return nil
-	})
-	if err != nil {
-		return nil, false, err
-	}
-	return &corev1.SecretReference{Name: r.kubeconfigSecretName(environment), Namespace: environment.Namespace}, true, nil
+	return kubeconfig, true, nil
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) clusterAPIServerURL(ctx context.Context) (string, error) {
@@ -490,7 +490,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureVCluster(
 	ctx context.Context,
 	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
-) (*corev1.SecretReference, bool, error) {
+) ([]byte, bool, error) {
 	if r.VClusterInstaller == nil {
 		return nil, false, errors.New("vCluster installer is not configured")
 	}
@@ -540,27 +540,26 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureVCluster(
 		return nil, false, err
 	}
 
-	if !r.OpenShift {
-		publicSecret, err := r.ensurePublicVClusterKubeconfig(ctx, environment, secret, nil)
+	secretKey := kubeconfigSecretKey(secret)
+	if secretKey == "" {
+		return nil, false, fmt.Errorf("vCluster Secret %s/%s does not contain a kubeconfig in %q or %q", secret.Namespace, secret.Name, VClusterKubeconfigKey, "kubeconfig")
+	}
+	kubeconfig := append([]byte(nil), secret.Data[secretKey]...)
+	if r.OpenShift {
+		kubeconfig, err = r.ensureOpenShiftVClusterEndpoint(ctx, environment, namespace, kubeconfig)
 		if err != nil {
 			return nil, false, err
 		}
-		return publicSecret, true, nil
 	}
-
-	publicSecret, err := r.ensureOpenShiftVClusterEndpoint(ctx, environment, namespace, secret)
-	if err != nil {
-		return nil, false, err
-	}
-	return publicSecret, true, nil
+	return kubeconfig, true, nil
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) ensureOpenShiftVClusterEndpoint(
 	ctx context.Context,
 	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
-	internalSecret *corev1.Secret,
-) (*corev1.SecretReference, error) {
+	kubeconfig []byte,
+) ([]byte, error) {
 	host, err := r.openShiftVClusterHost(ctx, environment)
 	if err != nil {
 		return nil, err
@@ -570,52 +569,11 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureOpenShiftVClusterEndpoint(
 		return nil, err
 	}
 
-	secretKey := kubeconfigSecretKey(internalSecret)
-	if secretKey == "" {
-		return nil, fmt.Errorf("vCluster Secret %s/%s does not contain a kubeconfig in %q or %q", internalSecret.Namespace, internalSecret.Name, VClusterKubeconfigKey, "kubeconfig")
-	}
-	rewrittenKubeconfig, err := rewriteKubeconfigServer(internalSecret.Data[secretKey], "https://"+host)
+	rewrittenKubeconfig, err := rewriteKubeconfigServer(kubeconfig, "https://"+host)
 	if err != nil {
 		return nil, fmt.Errorf("rewrite vCluster kubeconfig for Route %s: %w", host, err)
 	}
-	return r.ensurePublicVClusterKubeconfig(ctx, environment, internalSecret, rewrittenKubeconfig)
-}
-
-func (r *LLMWorkloadEnvironmentReconciler) ensurePublicVClusterKubeconfig(
-	ctx context.Context,
-	environment *environmentv1alpha1.LLMWorkloadEnvironment,
-	internalSecret *corev1.Secret,
-	rewrittenKubeconfig []byte,
-) (*corev1.SecretReference, error) {
-	secretName := r.kubeconfigSecretName(environment)
-	publicSecret := &corev1.Secret{}
-	secretKey := kubeconfigSecretKey(internalSecret)
-	if secretKey == "" {
-		return nil, fmt.Errorf("vCluster Secret %s/%s does not contain a kubeconfig in %q or %q", internalSecret.Namespace, internalSecret.Name, VClusterKubeconfigKey, "kubeconfig")
-	}
-	secretKeyRef := types.NamespacedName{Name: secretName, Namespace: environment.Namespace}
-	if err := r.Get(ctx, secretKeyRef, publicSecret); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("get public vCluster kubeconfig Secret: %w", err)
-		}
-		publicSecret = &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: secretName, Namespace: environment.Namespace}}
-	} else if !environmentOwns(publicSecret, environment) {
-		return nil, fmt.Errorf("%w: %s/%s", ErrKubeconfigSecretCollision, environment.Namespace, secretName)
-	}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, publicSecret, func() error {
-		publicSecret.Type = internalSecret.Type
-		publicSecret.Data = copySecretData(internalSecret.Data)
-		if len(rewrittenKubeconfig) > 0 {
-			publicSecret.Data[secretKey] = append([]byte(nil), rewrittenKubeconfig...)
-		}
-		markEnvironmentOwned(publicSecret, environment)
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("ensure public vCluster kubeconfig Secret: %w", err)
-	}
-
-	return &corev1.SecretReference{Name: secretName, Namespace: environment.Namespace}, nil
+	return rewrittenKubeconfig, nil
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) openShiftVClusterHost(
@@ -718,14 +676,6 @@ func kubeconfigSecretKey(secret *corev1.Secret) string {
 	return ""
 }
 
-func copySecretData(data map[string][]byte) map[string][]byte {
-	copy := make(map[string][]byte, len(data))
-	for key, value := range data {
-		copy[key] = append([]byte(nil), value...)
-	}
-	return copy
-}
-
 func (r *LLMWorkloadEnvironmentReconciler) notReady(
 	ctx context.Context,
 	environment *environmentv1alpha1.LLMWorkloadEnvironment,
@@ -745,14 +695,14 @@ func (r *LLMWorkloadEnvironmentReconciler) setReady(
 	ctx context.Context,
 	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespaceName string,
-	kubeconfigSecretRef *corev1.SecretReference,
+	kubeconfig []byte,
 	status metav1.ConditionStatus,
 	reason string,
 	message string,
 ) error {
 	before := environment.DeepCopy()
 	environment.Status.NamespaceRef = &corev1.LocalObjectReference{Name: namespaceName}
-	environment.Status.KubeconfigSecretRef = kubeconfigSecretRef
+	environment.Status.Kubeconfig = append([]byte(nil), kubeconfig...)
 	apimeta.SetStatusCondition(&environment.Status.Conditions, metav1.Condition{
 		Type:               environmentv1alpha1.ReadyCondition,
 		Status:             status,
@@ -772,15 +722,7 @@ func (r *LLMWorkloadEnvironmentReconciler) finalize(
 		return ctrl.Result{}, nil
 	}
 
-	kubeconfigSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{Name: r.kubeconfigSecretName(environment), Namespace: environment.Namespace}, kubeconfigSecret); err == nil {
-		if environmentOwns(kubeconfigSecret, environment) {
-			if err := r.Delete(ctx, kubeconfigSecret); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, err
-			}
-			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
-		}
-	} else if !apierrors.IsNotFound(err) {
+	if err := r.removeLegacyKubeconfigSecret(ctx, environment); err != nil {
 		return ctrl.Result{}, err
 	}
 
