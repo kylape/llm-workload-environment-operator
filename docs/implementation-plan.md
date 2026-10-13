@@ -42,7 +42,7 @@ environment request.
 ## Namespace reconciliation
 
 For an `LLMWorkloadEnvironment` named `<name>`, the operator creates a namespace
-named `environment-<name>`. It labels the namespace with
+named `env-<name>`. It labels the namespace with
 `kueue.openshift.io/managed: "true"` so the cluster Kueue controller manages
 workloads submitted through the environment's LocalQueue.
 
@@ -139,7 +139,7 @@ Status remains deliberately compact:
 ```yaml
 status:
   namespaceRef:
-    name: environment-alice-test
+    name: env-alice-test
   kubeconfigSecretRef:
     namespace: alice-dev
     name: environment-alice-test-kubeconfig # Namespace mode; vCluster uses vc-... here

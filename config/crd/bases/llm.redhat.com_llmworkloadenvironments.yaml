@@ -164,9 +164,9 @@ spec:
             type: object
         type: object
         x-kubernetes-validations:
-        - message: environment names must be at most 53 characters to allow the environment-
+        - message: environment names must be at most 59 characters to allow the env-
             prefix
-          rule: size(self.metadata.name) <= 53
+          rule: size(self.metadata.name) <= 59
     served: true
     storage: true
     subresources:

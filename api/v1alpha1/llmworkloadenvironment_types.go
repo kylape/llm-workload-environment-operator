@@ -46,7 +46,7 @@ type LLMWorkloadEnvironmentStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=llmwe
 // +kubebuilder:subresource:status
-// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 53",message="environment names must be at most 53 characters to allow the environment- prefix"
+// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 59",message="environment names must be at most 59 characters to allow the env- prefix"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.namespaceRef.name"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"

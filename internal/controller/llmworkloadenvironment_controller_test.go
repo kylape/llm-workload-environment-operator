@@ -56,7 +56,7 @@ func TestReconcileNamespaceEnvironment(t *testing.T) {
 	}
 
 	namespace := &corev1.Namespace{}
-	if err := client.Get(ctx, types.NamespacedName{Name: "environment-example"}, namespace); err != nil {
+	if err := client.Get(ctx, types.NamespacedName{Name: NamespacePrefix + "example"}, namespace); err != nil {
 		t.Fatalf("environment namespace: %v", err)
 	}
 	if namespace.Labels[KueueManagedLabel] != "true" {
@@ -204,7 +204,7 @@ func TestNamespaceCollision(t *testing.T) {
 		Annotations: map[string]string{AllowedClusterQueuesAnnotation: DefaultClusterQueueName},
 	}}
 	clusterQueue := &kueuev1beta2.ClusterQueue{ObjectMeta: metav1.ObjectMeta{Name: DefaultClusterQueueName}}
-	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "environment-collision"}}
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: NamespacePrefix + "collision"}}
 	client := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
@@ -234,7 +234,7 @@ func TestNamespaceAccessOnlyBindsGeneratedServiceAccount(t *testing.T) {
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(environment).Build()
 	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
-	const namespace = "environment-revoke"
+	const namespace = "env-revoke"
 
 	if err := reconciler.ensureNamespaceServiceAccountAccess(ctx, environment, namespace); err != nil {
 		t.Fatal(err)
@@ -255,7 +255,7 @@ func TestEnsureNamespaceKubeconfig(t *testing.T) {
 	environment := &environmentv1alpha1.LLMWorkloadEnvironment{
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "requests", UID: types.UID("environment-uid")},
 	}
-	namespace := "environment-example"
+	namespace := NamespacePrefix + environment.Name
 	tokenSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        NamespaceKubeconfigTokenSecretName,
@@ -352,14 +352,14 @@ func TestEnsureVClusterUsesDetectedPlatformAndScopedBinding(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "example", Namespace: "requests", UID: types.UID("environment-uid")},
 		Spec:       environmentv1alpha1.LLMWorkloadEnvironmentSpec{Mode: environmentv1alpha1.EnvironmentModeVCluster},
 	}
-	namespace := "environment-example"
+	namespace := NamespacePrefix + environment.Name
 	statefulSet := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: environment.Name, Namespace: namespace},
 		Status:     appsv1.StatefulSetStatus{ReadyReplicas: 1},
 	}
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "vc-example", Namespace: namespace},
-		Data:       map[string][]byte{"config": []byte("apiVersion: v1\nclusters:\n- cluster:\n    certificate-authority-data: Y2E=\n    server: https://vc-example.environment-example.svc\n  name: vcluster\n")},
+		Data:       map[string][]byte{"config": []byte("apiVersion: v1\nclusters:\n- cluster:\n    certificate-authority-data: Y2E=\n    server: https://vc-example.env-example.svc\n  name: vcluster\n")},
 	}
 	ingress := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "config.openshift.io/v1",
@@ -428,7 +428,7 @@ func TestEnsureVClusterDoesNotCreateAccessBindings(t *testing.T) {
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(environment).Build()
 	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
-	namespace := "environment-example"
+	namespace := NamespacePrefix + environment.Name
 
 	if err := reconciler.removeLegacyVClusterAccess(ctx, environment, namespace); err != nil {
 		t.Fatal(err)

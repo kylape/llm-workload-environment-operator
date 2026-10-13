@@ -37,7 +37,7 @@ spec:
 
 Creating this resource provisions:
 
-* namespace `environment-alice-test`;
+* namespace `env-alice-test`;
 * a Kueue `LocalQueue` named `default` that references the platform-owned
   `inference-workspaces` ClusterQueue.
 

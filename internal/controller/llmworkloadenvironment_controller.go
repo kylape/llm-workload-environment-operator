@@ -27,7 +27,8 @@ import (
 
 const (
 	FinalizerName                         = "llm.redhat.com/environment-cleanup"
-	NamespacePrefix                       = "environment-"
+	NamespacePrefix                       = "env-"
+	NamespaceKubeconfigSecretPrefix       = "environment-"
 	EnvironmentOwnerAnnotation            = "llm.redhat.com/environment-owner"
 	EnvironmentUIDAnnotation              = "llm.redhat.com/environment-uid"
 	AllowedClusterQueuesAnnotation        = "llm.redhat.com/allowed-cluster-queues"
@@ -277,7 +278,7 @@ func (r *LLMWorkloadEnvironmentReconciler) removeLegacyVClusterAccess(
 
 func (r *LLMWorkloadEnvironmentReconciler) kubeconfigSecretName(environment *environmentv1alpha1.LLMWorkloadEnvironment) string {
 	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeNamespace {
-		return NamespacePrefix + environment.Name + "-kubeconfig"
+		return NamespaceKubeconfigSecretPrefix + environment.Name + "-kubeconfig"
 	}
 	if r.OpenShift && environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
 		return "vc-" + environment.Name + "-external"
