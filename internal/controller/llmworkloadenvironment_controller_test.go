@@ -10,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -33,10 +34,16 @@ func TestReconcileNamespaceEnvironment(t *testing.T) {
 		},
 	}
 	clusterQueue := &kueuev1beta2.ClusterQueue{ObjectMeta: metav1.ObjectMeta{Name: "development"}}
+	landingNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: "requests",
+		Annotations: map[string]string{
+			AllowedClusterQueuesAnnotation: "development",
+		},
+	}}
 	client := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
-		WithObjects(environment, clusterQueue).
+		WithObjects(environment, landingNamespace, clusterQueue).
 		Build()
 	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}
@@ -85,6 +92,101 @@ func TestReconcileNamespaceEnvironment(t *testing.T) {
 	}
 }
 
+func TestReconcileRejectsClusterQueueOutsideLandingNamespaceAllowlist(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	scheme := testScheme(t)
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "example",
+			Namespace:  "requests",
+			UID:        types.UID("environment-uid"),
+			Finalizers: []string{FinalizerName},
+		},
+		Spec: environmentv1alpha1.LLMWorkloadEnvironmentSpec{ClusterQueue: "development"},
+	}
+	landingNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name:        environment.Namespace,
+		Annotations: map[string]string{AllowedClusterQueuesAnnotation: "production, gpu-high-memory"},
+	}}
+	clusterQueue := &kueuev1beta2.ClusterQueue{ObjectMeta: metav1.ObjectMeta{Name: "development"}}
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
+		WithObjects(environment, landingNamespace, clusterQueue).
+		Build()
+	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}
+
+	if _, err := reconciler.Reconcile(ctx, request); err != nil {
+		t.Fatalf("reconcile unauthorized queue: %v", err)
+	}
+	current := &environmentv1alpha1.LLMWorkloadEnvironment{}
+	if err := client.Get(ctx, request.NamespacedName, current); err != nil {
+		t.Fatalf("get environment status: %v", err)
+	}
+	ready := apimeta.FindStatusCondition(current.Status.Conditions, environmentv1alpha1.ReadyCondition)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "ClusterQueueNotAllowed" {
+		t.Fatalf("unexpected Ready condition: %#v", ready)
+	}
+	if !strings.Contains(ready.Message, "development") || !strings.Contains(ready.Message, environment.Namespace) {
+		t.Fatalf("Ready condition does not explain the authorization failure: %q", ready.Message)
+	}
+	backingNamespace := &corev1.Namespace{}
+	if err := client.Get(ctx, types.NamespacedName{Name: NamespacePrefix + environment.Name}, backingNamespace); !apierrors.IsNotFound(err) {
+		t.Fatalf("backing namespace lookup error = %v, want NotFound", err)
+	}
+	localQueue := &kueuev1beta2.LocalQueue{}
+	if err := client.Get(ctx, types.NamespacedName{Name: LocalQueueName, Namespace: NamespacePrefix + environment.Name}, localQueue); !apierrors.IsNotFound(err) {
+		t.Fatalf("LocalQueue lookup error = %v, want NotFound", err)
+	}
+}
+
+func TestReconcileRejectsMissingClusterQueueBeforeProvisioning(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	scheme := testScheme(t)
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "example",
+			Namespace:  "requests",
+			UID:        types.UID("environment-uid"),
+			Finalizers: []string{FinalizerName},
+		},
+		Spec: environmentv1alpha1.LLMWorkloadEnvironmentSpec{ClusterQueue: "development"},
+	}
+	landingNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name:        environment.Namespace,
+		Annotations: map[string]string{AllowedClusterQueuesAnnotation: "development"},
+	}}
+	client := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
+		WithObjects(environment, landingNamespace).
+		Build()
+	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}
+
+	if _, err := reconciler.Reconcile(ctx, request); err != nil {
+		t.Fatalf("reconcile missing queue: %v", err)
+	}
+	current := &environmentv1alpha1.LLMWorkloadEnvironment{}
+	if err := client.Get(ctx, request.NamespacedName, current); err != nil {
+		t.Fatalf("get environment status: %v", err)
+	}
+	ready := apimeta.FindStatusCondition(current.Status.Conditions, environmentv1alpha1.ReadyCondition)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "ClusterQueueNotFound" {
+		t.Fatalf("unexpected Ready condition: %#v", ready)
+	}
+	if !strings.Contains(ready.Message, "development") {
+		t.Fatalf("Ready condition does not identify the missing queue: %q", ready.Message)
+	}
+	backingNamespace := &corev1.Namespace{}
+	if err := client.Get(ctx, types.NamespacedName{Name: NamespacePrefix + environment.Name}, backingNamespace); !apierrors.IsNotFound(err) {
+		t.Fatalf("backing namespace lookup error = %v, want NotFound", err)
+	}
+}
+
 func TestNamespaceCollision(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -97,11 +199,16 @@ func TestNamespaceCollision(t *testing.T) {
 			Finalizers: []string{FinalizerName},
 		},
 	}
+	landingNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name:        environment.Namespace,
+		Annotations: map[string]string{AllowedClusterQueuesAnnotation: DefaultClusterQueueName},
+	}}
+	clusterQueue := &kueuev1beta2.ClusterQueue{ObjectMeta: metav1.ObjectMeta{Name: DefaultClusterQueueName}}
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "environment-collision"}}
 	client := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
-		WithObjects(environment, namespace).
+		WithObjects(environment, landingNamespace, clusterQueue, namespace).
 		Build()
 	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
 
@@ -197,6 +304,30 @@ func TestClusterQueueDefaults(t *testing.T) {
 	environment := &environmentv1alpha1.LLMWorkloadEnvironment{}
 	if got := requestedClusterQueue(environment); got != kueuev1beta2.ClusterQueueReference(DefaultClusterQueueName) {
 		t.Fatalf("default ClusterQueue is %q, want %q", got, DefaultClusterQueueName)
+	}
+}
+
+func TestClusterQueueAllowedParsesCommaDelimitedList(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		annotation string
+		requested  string
+		want       bool
+	}{
+		{name: "exact entry", annotation: "gpu-small,gpu-large", requested: "gpu-large", want: true},
+		{name: "trims surrounding whitespace", annotation: "gpu-small, gpu-large ", requested: "gpu-large", want: true},
+		{name: "does not match partial names", annotation: "gpu-large-extra", requested: "gpu-large", want: false},
+		{name: "empty annotation denies access", annotation: "", requested: "inference-workspaces", want: false},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := clusterQueueAllowed(test.annotation, test.requested); got != test.want {
+				t.Errorf("clusterQueueAllowed(%q, %q) = %v, want %v", test.annotation, test.requested, got, test.want)
+			}
+		})
 	}
 }
 
