@@ -10,6 +10,15 @@ namespaced `LLMWorkloadEnvironment` resource. The resource namespace is the
 control boundary: the infra service can manage environments across namespaces, while
 direct users can be limited to a namespace by ordinary Kubernetes RBAC.
 
+Each control (landing) namespace must allow the ClusterQueues its environments
+can use. Set the `llm.redhat.com/allowed-cluster-queues` annotation to a
+comma-delimited list on that namespace, for example:
+
+```bash
+kubectl annotate namespace alice-dev \
+  llm.redhat.com/allowed-cluster-queues='inference-workspaces,gpu-high-memory'
+```
+
 See the [implementation plan](docs/implementation-plan.md) for the API and
 ownership decisions.
 
@@ -50,8 +59,10 @@ is disabled.
 
 The reusable environment role does not permit its subjects to mutate LocalQueues,
 cluster RBAC, or CRDs. Kueue queue selection remains controlled by the operator.
-`spec.clusterQueue` may reference any ClusterQueue in the initial API and
-defaults to `inference-workspaces` when omitted.
+The operator checks that the selected ClusterQueue both exists and appears in the
+landing namespace's allowlist before creating the backing environment namespace.
+An omitted `spec.clusterQueue` resolves to `inference-workspaces`, which must also
+be listed. Rejected requests report the reason in the `Ready` status condition.
 
 The operator does not grant access to arbitrary identities from the
 `LLMWorkloadEnvironment` spec. Existing namespace RBAC determines who may create an

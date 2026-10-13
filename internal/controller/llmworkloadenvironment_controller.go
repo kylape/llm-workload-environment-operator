@@ -30,6 +30,7 @@ const (
 	NamespacePrefix                       = "environment-"
 	EnvironmentOwnerAnnotation            = "llm.redhat.com/environment-owner"
 	EnvironmentUIDAnnotation              = "llm.redhat.com/environment-uid"
+	AllowedClusterQueuesAnnotation        = "llm.redhat.com/allowed-cluster-queues"
 	AccessBindingName                     = "environment-access"
 	EnvironmentRoleName                   = "llm-workload-environment-user"
 	VClusterRoleName                      = "llm-workload-environment-vcluster"
@@ -81,6 +82,14 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	reason, message, err := r.validateClusterQueue(ctx, environment)
+	if err != nil {
+		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
+	}
+	if reason != "" {
+		return r.notReady(ctx, environment, namespaceName, reason, message, 30*time.Second, nil)
+	}
+
 	if err := r.ensureNamespace(ctx, environment, namespaceName); err != nil {
 		if errors.Is(err, ErrNamespaceCollision) {
 			return r.notReady(ctx, environment, namespaceName, "NamespaceCollision", err.Error(), 30*time.Second, nil)
@@ -97,13 +106,6 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 			return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 		}
 	} else if err := r.removeLegacyVClusterAccess(ctx, environment, namespaceName); err != nil {
-		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
-	}
-
-	if err := r.ensureClusterQueueExists(ctx, environment); err != nil {
-		if apierrors.IsNotFound(err) {
-			return r.notReady(ctx, environment, namespaceName, "ClusterQueueNotFound", err.Error(), 30*time.Second, nil)
-		}
 		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 	}
 
@@ -402,6 +404,46 @@ func (r *LLMWorkloadEnvironmentReconciler) clusterAPIServerURL(ctx context.Conte
 func (r *LLMWorkloadEnvironmentReconciler) ensureClusterQueueExists(ctx context.Context, environment *environmentv1alpha1.LLMWorkloadEnvironment) error {
 	queue := &kueuev1beta2.ClusterQueue{}
 	return r.Get(ctx, types.NamespacedName{Name: string(requestedClusterQueue(environment))}, queue)
+}
+
+func (r *LLMWorkloadEnvironmentReconciler) validateClusterQueue(
+	ctx context.Context,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
+) (string, string, error) {
+	landingNamespace := &corev1.Namespace{}
+	if err := r.Get(ctx, types.NamespacedName{Name: environment.Namespace}, landingNamespace); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "LandingNamespaceNotFound", fmt.Sprintf("Landing namespace %q does not exist", environment.Namespace), nil
+		}
+		return "", "", err
+	}
+
+	requestedQueue := string(requestedClusterQueue(environment))
+	if !clusterQueueAllowed(landingNamespace.Annotations[AllowedClusterQueuesAnnotation], requestedQueue) {
+		return "ClusterQueueNotAllowed", fmt.Sprintf(
+			"ClusterQueue %q is not allowed in landing namespace %q; annotate it with %s containing this queue",
+			requestedQueue,
+			environment.Namespace,
+			AllowedClusterQueuesAnnotation,
+		), nil
+	}
+
+	if err := r.ensureClusterQueueExists(ctx, environment); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "ClusterQueueNotFound", fmt.Sprintf("ClusterQueue %q does not exist", requestedQueue), nil
+		}
+		return "", "", err
+	}
+	return "", "", nil
+}
+
+func clusterQueueAllowed(annotation, requestedQueue string) bool {
+	for _, queue := range strings.Split(annotation, ",") {
+		if strings.TrimSpace(queue) == requestedQueue {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) ensureLocalQueue(

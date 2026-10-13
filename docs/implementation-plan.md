@@ -83,12 +83,12 @@ workload integrations. The cluster's Kueue installation remains responsible
 for enabling the required workload integrations and enforcing management of
 workloads in environment namespaces.
 
-The operator verifies that the requested ClusterQueue exists but does not
-create or manage ClusterQueues, ResourceFlavors, cohorts, or priority policy.
-The `infra` service maps users and teams to allowed ClusterQueues and refuses
-unauthorized requests before creating an environment. Environment users must never
-receive permission to mutate a LocalQueue because doing so could bypass that
-authorization boundary.
+The operator verifies that the requested ClusterQueue exists and is listed in the
+`llm.redhat.com/allowed-cluster-queues` comma-delimited annotation on the
+`LLMWorkloadEnvironment`'s landing namespace before creating backing resources.
+It does not create or manage ClusterQueues, ResourceFlavors, cohorts, or priority
+policy. Environment users must never receive permission to mutate a LocalQueue
+because doing so could bypass that authorization boundary.
 
 Because the vCluster control plane is itself scheduled in the managed environment
 namespace, the selected ClusterQueue must cover all of its requested resources,
