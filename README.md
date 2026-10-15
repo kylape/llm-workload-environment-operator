@@ -63,6 +63,24 @@ landing namespace's allowlist before creating the backing environment namespace.
 An omitted `spec.clusterQueue` resolves to `inference-workspaces`, which must also
 be listed. Rejected requests report the reason in the `Ready` status condition.
 
+## Kueue API compatibility
+
+The operator discovers the Kueue APIs served by the cluster and prefers
+`kueue.x-k8s.io/v1beta2`, falling back to `v1beta1`. The selected version must
+serve both `ClusterQueue` and `LocalQueue`. Compatibility is based on the
+installed CRDs. Upstream Kueue v0.15 through v0.19 serve both API versions;
+v0.20 and later serve only `v1beta2`. Kueue v0.16 uses `v1beta2` for storage
+and provides migration guidance for objects previously stored as `v1beta1`.
+See the upstream
+[v0.16 upgrade notes](https://github.com/kubernetes-sigs/kueue/releases/tag/v0.16.0)
+and [v0.20 upgrade notes](https://github.com/kubernetes-sigs/kueue/releases/tag/v0.20.0).
+
+No fleet-wide Kueue upgrade is required for this operator compatibility. If
+neither API version is served with both resources, the environment reports
+`Ready=False` with reason `KueueAPINotAvailable` and a message naming the
+required APIs. Kueue release upgrades should be planned separately using the
+upstream upgrade guidance.
+
 The operator does not grant access to arbitrary identities from the
 `LLMWorkloadEnvironment` spec. Existing namespace RBAC determines who may read an
 environment; readers can retrieve its kubeconfig from status. The

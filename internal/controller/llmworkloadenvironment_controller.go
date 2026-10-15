@@ -22,7 +22,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	kueuev1beta2 "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 )
 
 const (
@@ -57,6 +56,7 @@ var openShiftInfrastructureGVK = schema.GroupVersionKind{Group: "config.openshif
 type LLMWorkloadEnvironmentReconciler struct {
 	client.Client
 	Scheme            *runtime.Scheme
+	Kueue             KueueClient
 	VClusterInstaller environmentvcluster.Installer
 	OpenShift         bool
 	APIServerURL      string
@@ -86,6 +86,9 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 
 	reason, message, err := r.validateClusterQueue(ctx, environment)
 	if err != nil {
+		if errors.Is(err, ErrKueueAPIUnavailable) {
+			return r.notReady(ctx, environment, namespaceName, "KueueAPINotAvailable", err.Error(), 30*time.Second, nil)
+		}
 		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 	}
 	if reason != "" {
@@ -111,11 +114,14 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 	}
 
-	queue, err := r.ensureLocalQueue(ctx, environment, namespaceName)
+	queueActive, err := r.ensureLocalQueue(ctx, environment, namespaceName)
 	if err != nil {
+		if errors.Is(err, ErrKueueAPIUnavailable) {
+			return r.notReady(ctx, environment, namespaceName, "KueueAPINotAvailable", err.Error(), 30*time.Second, nil)
+		}
 		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 	}
-	if !localQueueActive(queue) {
+	if !queueActive {
 		return r.notReady(ctx, environment, namespaceName, "QueueNotReady", "Default LocalQueue is waiting for its ClusterQueue", 5*time.Second, nil)
 	}
 
@@ -403,8 +409,10 @@ func (r *LLMWorkloadEnvironmentReconciler) clusterAPIServerURL(ctx context.Conte
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) ensureClusterQueueExists(ctx context.Context, environment *environmentv1alpha1.LLMWorkloadEnvironment) error {
-	queue := &kueuev1beta2.ClusterQueue{}
-	return r.Get(ctx, types.NamespacedName{Name: string(requestedClusterQueue(environment))}, queue)
+	if r.Kueue == nil {
+		return fmt.Errorf("%w: Kueue client is not configured", ErrKueueAPIUnavailable)
+	}
+	return r.Kueue.EnsureClusterQueueExists(ctx, requestedClusterQueue(environment))
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) validateClusterQueue(
@@ -430,6 +438,9 @@ func (r *LLMWorkloadEnvironmentReconciler) validateClusterQueue(
 	}
 
 	if err := r.ensureClusterQueueExists(ctx, environment); err != nil {
+		if errors.Is(err, ErrKueueAPIUnavailable) {
+			return "KueueAPINotAvailable", err.Error(), nil
+		}
 		if apierrors.IsNotFound(err) {
 			return "ClusterQueueNotFound", fmt.Sprintf("ClusterQueue %q does not exist", requestedQueue), nil
 		}
@@ -451,32 +462,18 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureLocalQueue(
 	ctx context.Context,
 	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
-) (*kueuev1beta2.LocalQueue, error) {
-	queue := &kueuev1beta2.LocalQueue{
-		ObjectMeta: metav1.ObjectMeta{Name: LocalQueueName, Namespace: namespace},
+) (bool, error) {
+	if r.Kueue == nil {
+		return false, fmt.Errorf("%w: Kueue client is not configured", ErrKueueAPIUnavailable)
 	}
-	if err := r.Get(ctx, types.NamespacedName{Name: LocalQueueName, Namespace: namespace}, queue); err != nil && !apierrors.IsNotFound(err) {
-		return nil, err
-	} else if err == nil && !environmentOwns(queue, environment) {
-		return nil, fmt.Errorf("%w: %s/%s", ErrLocalQueueCollision, namespace, LocalQueueName)
-	}
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, queue, func() error {
-		queue.Spec.ClusterQueue = requestedClusterQueue(environment)
-		markEnvironmentOwned(queue, environment)
-		return nil
-	})
-	return queue, err
+	return r.Kueue.EnsureLocalQueue(ctx, environment, namespace, LocalQueueName)
 }
 
-func requestedClusterQueue(environment *environmentv1alpha1.LLMWorkloadEnvironment) kueuev1beta2.ClusterQueueReference {
+func requestedClusterQueue(environment *environmentv1alpha1.LLMWorkloadEnvironment) string {
 	if environment.Spec.ClusterQueue == "" {
-		return kueuev1beta2.ClusterQueueReference(DefaultClusterQueueName)
+		return DefaultClusterQueueName
 	}
-	return kueuev1beta2.ClusterQueueReference(environment.Spec.ClusterQueue)
-}
-
-func localQueueActive(queue *kueuev1beta2.LocalQueue) bool {
-	return apimeta.IsStatusConditionTrue(queue.Status.Conditions, kueuev1beta2.LocalQueueActive)
+	return environment.Spec.ClusterQueue
 }
 
 func environmentMode(environment *environmentv1alpha1.LLMWorkloadEnvironment) environmentv1alpha1.EnvironmentMode {

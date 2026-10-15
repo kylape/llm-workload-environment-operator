@@ -18,7 +18,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	controllerclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	kueuev1beta1 "sigs.k8s.io/kueue/apis/kueue/v1beta1"
 	kueuev1beta2 "sigs.k8s.io/kueue/apis/kueue/v1beta2"
 	"sigs.k8s.io/yaml"
 )
@@ -45,7 +47,7 @@ func TestReconcileNamespaceEnvironment(t *testing.T) {
 		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
 		WithObjects(environment, landingNamespace, clusterQueue).
 		Build()
-	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	reconciler := testReconciler(t, client, scheme)
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}
 
 	if _, err := reconciler.Reconcile(ctx, request); err != nil {
@@ -115,7 +117,7 @@ func TestReconcileRejectsClusterQueueOutsideLandingNamespaceAllowlist(t *testing
 		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
 		WithObjects(environment, landingNamespace, clusterQueue).
 		Build()
-	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	reconciler := testReconciler(t, client, scheme)
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}
 
 	if _, err := reconciler.Reconcile(ctx, request); err != nil {
@@ -164,7 +166,7 @@ func TestReconcileRejectsMissingClusterQueueBeforeProvisioning(t *testing.T) {
 		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
 		WithObjects(environment, landingNamespace).
 		Build()
-	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	reconciler := testReconciler(t, client, scheme)
 	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}
 
 	if _, err := reconciler.Reconcile(ctx, request); err != nil {
@@ -210,7 +212,7 @@ func TestNamespaceCollision(t *testing.T) {
 		WithStatusSubresource(&environmentv1alpha1.LLMWorkloadEnvironment{}).
 		WithObjects(environment, landingNamespace, clusterQueue, namespace).
 		Build()
-	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	reconciler := testReconciler(t, client, scheme)
 
 	if _, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}); err != nil {
 		t.Fatalf("reconcile collision: %v", err)
@@ -233,7 +235,7 @@ func TestNamespaceAccessOnlyBindsGeneratedServiceAccount(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "revoke", Namespace: "requests", UID: types.UID("environment-uid")},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(environment).Build()
-	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	reconciler := testReconciler(t, client, scheme)
 	const namespace = "env-revoke"
 
 	if err := reconciler.ensureNamespaceServiceAccountAccess(ctx, environment, namespace); err != nil {
@@ -268,7 +270,8 @@ func TestEnsureNamespaceKubeconfig(t *testing.T) {
 		},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(environment, tokenSecret).Build()
-	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme, APIServerURL: "https://api.example.test/"}
+	reconciler := testReconciler(t, client, scheme)
+	reconciler.APIServerURL = "https://api.example.test/"
 
 	kubeconfig, ready, err := reconciler.ensureNamespaceKubeconfig(ctx, environment, namespace)
 	if err != nil {
@@ -291,8 +294,10 @@ func TestEnsureNamespaceKubeconfig(t *testing.T) {
 
 func TestLocalQueueActive(t *testing.T) {
 	t.Parallel()
-	queue := &kueuev1beta2.LocalQueue{Status: kueuev1beta2.LocalQueueStatus{
-		Conditions: []metav1.Condition{{Type: kueuev1beta2.LocalQueueActive, Status: metav1.ConditionTrue}},
+	queue := &unstructured.Unstructured{Object: map[string]interface{}{
+		"status": map[string]interface{}{
+			"conditions": []interface{}{map[string]interface{}{"type": "Active", "status": "True"}},
+		},
 	}}
 	if !localQueueActive(queue) {
 		t.Fatal("expected LocalQueue to be active")
@@ -302,8 +307,109 @@ func TestLocalQueueActive(t *testing.T) {
 func TestClusterQueueDefaults(t *testing.T) {
 	t.Parallel()
 	environment := &environmentv1alpha1.LLMWorkloadEnvironment{}
-	if got := requestedClusterQueue(environment); got != kueuev1beta2.ClusterQueueReference(DefaultClusterQueueName) {
+	if got := requestedClusterQueue(environment); got != DefaultClusterQueueName {
 		t.Fatalf("default ClusterQueue is %q, want %q", got, DefaultClusterQueueName)
+	}
+}
+
+func TestReconcileSupportsKueueAPIVersions(t *testing.T) {
+	tests := []struct {
+		name             string
+		servedVersions   []string
+		selectedVersion  string
+		createBeta1Queue bool
+		createBeta2Queue bool
+	}{
+		{name: "falls back to v1beta1", servedVersions: []string{kueueV1Beta1}, selectedVersion: kueueV1Beta1, createBeta1Queue: true},
+		{name: "uses v1beta2", servedVersions: []string{kueueV1Beta2}, selectedVersion: kueueV1Beta2, createBeta2Queue: true},
+		{name: "prefers v1beta2 when both are served", servedVersions: []string{kueueV1Beta1, kueueV1Beta2}, selectedVersion: kueueV1Beta2, createBeta1Queue: true, createBeta2Queue: true},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			scheme := testScheme(t)
+			environment := &environmentv1alpha1.LLMWorkloadEnvironment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "version-check",
+					Namespace:  "requests",
+					UID:        types.UID("environment-uid"),
+					Finalizers: []string{FinalizerName},
+				},
+				Spec: environmentv1alpha1.LLMWorkloadEnvironmentSpec{ClusterQueue: "development"},
+			}
+			landingNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+				Name:        environment.Namespace,
+				Annotations: map[string]string{AllowedClusterQueuesAnnotation: "development"},
+			}}
+			objects := []controllerclient.Object{environment, landingNamespace}
+			if test.createBeta1Queue {
+				objects = append(objects, &kueuev1beta1.ClusterQueue{ObjectMeta: metav1.ObjectMeta{Name: "development"}})
+			}
+			if test.createBeta2Queue {
+				objects = append(objects, &kueuev1beta2.ClusterQueue{ObjectMeta: metav1.ObjectMeta{Name: "development"}})
+			}
+			kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(environment).WithObjects(objects...).Build()
+			reconciler := &LLMWorkloadEnvironmentReconciler{
+				Client: kubeClient,
+				Scheme: scheme,
+				Kueue:  NewKueueAdapter(kubeClient, newTestKueueDiscovery(test.servedVersions...)),
+			}
+			request := ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}
+			if _, err := reconciler.Reconcile(ctx, request); err != nil {
+				t.Fatalf("reconcile: %v", err)
+			}
+
+			localQueue := newKueueObject(schema.GroupVersion{Group: kueueAPIGroup, Version: test.selectedVersion}, "LocalQueue", LocalQueueName, NamespacePrefix+environment.Name)
+			if err := kubeClient.Get(ctx, types.NamespacedName{Name: LocalQueueName, Namespace: NamespacePrefix + environment.Name}, localQueue); err != nil {
+				t.Fatalf("LocalQueue through %s was not created: %v", test.selectedVersion, err)
+			}
+			clusterQueue, found, err := unstructured.NestedString(localQueue.Object, "spec", "clusterQueue")
+			if err != nil || !found || clusterQueue != "development" {
+				t.Fatalf("LocalQueue spec.clusterQueue = %q, found=%v, err=%v", clusterQueue, found, err)
+			}
+		})
+	}
+}
+
+func TestReconcileReportsWhenNoSupportedKueueAPIIsServed(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	scheme := testScheme(t)
+	environment := &environmentv1alpha1.LLMWorkloadEnvironment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "unsupported-kueue",
+			Namespace:  "requests",
+			UID:        types.UID("environment-uid"),
+			Finalizers: []string{FinalizerName},
+		},
+		Spec: environmentv1alpha1.LLMWorkloadEnvironmentSpec{ClusterQueue: "development"},
+	}
+	landingNamespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name:        environment.Namespace,
+		Annotations: map[string]string{AllowedClusterQueuesAnnotation: "development"},
+	}}
+	kubeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(environment).WithObjects(environment, landingNamespace).Build()
+	reconciler := &LLMWorkloadEnvironmentReconciler{
+		Client: kubeClient,
+		Scheme: scheme,
+		Kueue:  NewKueueAdapter(kubeClient, newTestKueueDiscovery()),
+	}
+	request := ctrl.Request{NamespacedName: types.NamespacedName{Name: environment.Name, Namespace: environment.Namespace}}
+	if _, err := reconciler.Reconcile(ctx, request); err != nil {
+		t.Fatalf("reconcile unsupported Kueue API: %v", err)
+	}
+	current := &environmentv1alpha1.LLMWorkloadEnvironment{}
+	if err := kubeClient.Get(ctx, request.NamespacedName, current); err != nil {
+		t.Fatalf("get environment status: %v", err)
+	}
+	ready := apimeta.FindStatusCondition(current.Status.Conditions, environmentv1alpha1.ReadyCondition)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "KueueAPINotAvailable" {
+		t.Fatalf("unexpected Ready condition: %#v", ready)
+	}
+	if !strings.Contains(ready.Message, kueueV1Beta2) || !strings.Contains(ready.Message, kueueV1Beta1) {
+		t.Fatalf("unsupported Kueue message should list both APIs: %q", ready.Message)
 	}
 }
 
@@ -427,7 +533,7 @@ func TestEnsureVClusterDoesNotCreateAccessBindings(t *testing.T) {
 		Spec:       environmentv1alpha1.LLMWorkloadEnvironmentSpec{Mode: environmentv1alpha1.EnvironmentModeVCluster},
 	}
 	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(environment).Build()
-	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, Scheme: scheme}
+	reconciler := testReconciler(t, client, scheme)
 	namespace := NamespacePrefix + environment.Name
 
 	if err := reconciler.removeLegacyVClusterAccess(ctx, environment, namespace); err != nil {
@@ -515,6 +621,37 @@ func containsString(value, target string) bool {
 	return strings.Contains(value, target)
 }
 
+type testKueueDiscovery struct {
+	servedVersions map[string]bool
+}
+
+func newTestKueueDiscovery(versions ...string) testKueueDiscovery {
+	servedVersions := make(map[string]bool, len(versions))
+	for _, version := range versions {
+		servedVersions[schema.GroupVersion{Group: kueueAPIGroup, Version: version}.String()] = true
+	}
+	return testKueueDiscovery{servedVersions: servedVersions}
+}
+
+func (d testKueueDiscovery) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
+	if !d.servedVersions[groupVersion] {
+		return nil, apierrors.NewNotFound(schema.GroupResource{Group: kueueAPIGroup}, groupVersion)
+	}
+	return &metav1.APIResourceList{
+		GroupVersion: groupVersion,
+		APIResources: []metav1.APIResource{{Name: "clusterqueues"}, {Name: "localqueues"}},
+	}, nil
+}
+
+func testReconciler(t *testing.T, kubeClient controllerclient.Client, scheme *runtime.Scheme) *LLMWorkloadEnvironmentReconciler {
+	t.Helper()
+	return &LLMWorkloadEnvironmentReconciler{
+		Client: kubeClient,
+		Scheme: scheme,
+		Kueue:  NewKueueAdapter(kubeClient, newTestKueueDiscovery(kueueV1Beta2)),
+	}
+}
+
 func testScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -528,6 +665,9 @@ func testScheme(t *testing.T) *runtime.Scheme {
 		t.Fatal(err)
 	}
 	if err := environmentv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	if err := kueuev1beta1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
 	if err := kueuev1beta2.AddToScheme(scheme); err != nil {
