@@ -102,6 +102,8 @@ func installArgs(name, namespace, chartPath string, openShift bool, publicHost s
 		"--set-string", "controlPlane.statefulSet.image.repository=klape/vcluster",
 		"--set-string", "controlPlane.statefulSet.image.tag=csi-capacity-debug-v26",
 		"--set", "rbac.clusterRole.enabled=false",
+		"--set", "controlPlane.backingStore.etcd.deploy.enabled=true",
+		"--set", "controlPlane.statefulSet.persistence.volumeClaim.enabled=true",
 		"--set", "sync.fromHost.csiStorageCapacities.enabled=true",
 		"--set", "sync.fromHost.storageClasses.enabled=true",
 		"--set", "sync.fromHost.csiNodes.enabled=false",
