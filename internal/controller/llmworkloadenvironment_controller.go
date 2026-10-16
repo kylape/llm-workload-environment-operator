@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -17,19 +16,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/validation"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 const (
@@ -41,9 +35,6 @@ const (
 	AccessBindingName                     = "environment-access"
 	EnvironmentRoleName                   = "llm-workload-environment-user"
 	VClusterRoleName                      = "llm-workload-environment-vcluster"
-	VClusterAPIServiceSuffix              = "-api"
-	VClusterPublicLBAnnotation            = "service.beta.kubernetes.io/coreweave-load-balancer-type"
-	VClusterPublicLBAnnotationValue       = "public"
 	NamespaceKubeconfigServiceAccountName = "environment-kubeconfig"
 	NamespaceKubeconfigTokenSecretName    = "environment-kubeconfig-token"
 	LocalQueueName                        = "default"
@@ -53,18 +44,12 @@ const (
 )
 
 var ErrNamespaceCollision = errors.New("environment namespace already exists and is not controlled by this environment")
-var ErrRouteCollision = errors.New("vCluster Route already exists and is not controlled by this environment")
 var ErrVClusterBindingCollision = errors.New("vCluster ClusterRoleBinding already exists and is not controlled by this environment")
-var ErrVClusterAPIServiceCollision = errors.New("vCluster API Service already exists and is not controlled by this environment")
 var ErrVClusterPlatformNotConfigured = errors.New("vCluster platform is not configured; set PLATFORM=openshift or PLATFORM=coreweave")
 var ErrAccessBindingCollision = errors.New("environment access RoleBinding already exists and is not controlled by this environment")
 var ErrLocalQueueCollision = errors.New("environment LocalQueue already exists and is not controlled by this environment")
 var ErrNamespaceKubeconfigServiceAccountCollision = errors.New("environment kubeconfig ServiceAccount already exists and is not controlled by this environment")
 var ErrNamespaceKubeconfigTokenSecretCollision = errors.New("environment kubeconfig token Secret already exists and is not controlled by this environment")
-
-var openShiftRouteGVK = schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: "Route"}
-var openShiftIngressGVK = schema.GroupVersionKind{Group: "config.openshift.io", Version: "v1", Kind: "Ingress"}
-var openShiftInfrastructureGVK = schema.GroupVersionKind{Group: "config.openshift.io", Version: "v1", Kind: "Infrastructure"}
 
 type LLMWorkloadEnvironmentReconciler struct {
 	client.Client
@@ -409,16 +394,12 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespaceKubeconfig(
 
 func (r *LLMWorkloadEnvironmentReconciler) clusterAPIServerURL(ctx context.Context) (string, error) {
 	if r.isOpenShift() {
-		infrastructure := &unstructured.Unstructured{}
-		infrastructure.SetGroupVersionKind(openShiftInfrastructureGVK)
-		if err := r.Get(ctx, types.NamespacedName{Name: "cluster"}, infrastructure); err == nil {
-			if url, found, err := unstructured.NestedString(infrastructure.Object, "status", "apiServerURL"); err != nil {
-				return "", err
-			} else if found && url != "" {
-				return strings.TrimRight(url, "/"), nil
-			}
-		} else if !apierrors.IsNotFound(err) {
+		url, found, err := r.openShiftAPIServerURL(ctx)
+		if err != nil {
 			return "", err
+		}
+		if found {
+			return url, nil
 		}
 	}
 	if r.APIServerURL == "" {
@@ -529,7 +510,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureVCluster(
 	publicHost := ""
 	var externalService *corev1.Service
 	if r.isOpenShift() {
-		if err := r.removeVClusterAPIService(ctx, environment, namespace); err != nil {
+		if err := r.removeCoreWeaveVClusterAPIService(ctx, environment, namespace); err != nil {
 			return nil, false, err
 		}
 		publicHost, err = r.openShiftVClusterHost(ctx, environment)
@@ -538,12 +519,12 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureVCluster(
 		}
 	} else {
 		if r.Platform != clusterplatform.PlatformCoreWeave {
-			if err := r.removeVClusterAPIService(ctx, environment, namespace); err != nil {
+			if err := r.removeCoreWeaveVClusterAPIService(ctx, environment, namespace); err != nil {
 				return nil, false, err
 			}
 			return nil, false, ErrVClusterPlatformNotConfigured
 		}
-		externalService, err = r.ensureVClusterAPIService(ctx, environment, namespace)
+		externalService, err = r.ensureCoreWeaveVClusterAPIService(ctx, environment, namespace)
 		if err != nil {
 			return nil, false, err
 		}
@@ -598,227 +579,6 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureVCluster(
 		}
 	}
 	return kubeconfig, true, nil
-}
-
-func (r *LLMWorkloadEnvironmentReconciler) ensureVClusterAPIService(
-	ctx context.Context,
-	environment *environmentv1alpha1.LLMWorkloadEnvironment,
-	namespace string,
-) (*corev1.Service, error) {
-	name := environment.Name + VClusterAPIServiceSuffix
-	service := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace}}
-	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, service); err != nil && !apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("get vCluster API Service %s/%s: %w", namespace, name, err)
-	} else if err == nil && !environmentOwns(service, environment) {
-		return nil, fmt.Errorf("%w: %s/%s", ErrVClusterAPIServiceCollision, namespace, name)
-	}
-
-	nodePort := vClusterAPIServiceNodePort(service)
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, service, func() error {
-		service.Spec.Type = corev1.ServiceTypeLoadBalancer
-		service.Spec.Selector = map[string]string{
-			"app":     "vcluster",
-			"release": environment.Name,
-		}
-		service.Spec.Ports = []corev1.ServicePort{{
-			Name:       "https",
-			Protocol:   corev1.ProtocolTCP,
-			Port:       443,
-			TargetPort: intstr.FromInt32(8443),
-			NodePort:   nodePort,
-		}}
-		if service.Annotations == nil {
-			service.Annotations = map[string]string{}
-		}
-		service.Annotations[VClusterPublicLBAnnotation] = VClusterPublicLBAnnotationValue
-		markEnvironmentOwned(service, environment)
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("ensure vCluster API LoadBalancer Service %s/%s: %w", namespace, name, err)
-	}
-	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, service); err != nil {
-		return nil, fmt.Errorf("read vCluster API LoadBalancer Service %s/%s: %w", namespace, name, err)
-	}
-	return service, nil
-}
-
-func (r *LLMWorkloadEnvironmentReconciler) removeVClusterAPIService(
-	ctx context.Context,
-	environment *environmentv1alpha1.LLMWorkloadEnvironment,
-	namespace string,
-) error {
-	name := environment.Name + VClusterAPIServiceSuffix
-	service := &corev1.Service{}
-	if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, service); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("get vCluster API Service %s/%s: %w", namespace, name, err)
-	}
-	if !environmentOwns(service, environment) {
-		return fmt.Errorf("%w: %s/%s", ErrVClusterAPIServiceCollision, namespace, name)
-	}
-	if err := r.Delete(ctx, service); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("delete vCluster API Service %s/%s: %w", namespace, name, err)
-	}
-	return nil
-}
-
-func vClusterAPIServiceNodePort(service *corev1.Service) int32 {
-	if service == nil {
-		return 0
-	}
-	for _, port := range service.Spec.Ports {
-		if port.Name == "https" {
-			return port.NodePort
-		}
-	}
-	return 0
-}
-
-func vClusterAPIServiceAddress(service *corev1.Service) string {
-	if service == nil {
-		return ""
-	}
-	for _, ingress := range service.Status.LoadBalancer.Ingress {
-		if ingress.IP != "" {
-			return ingress.IP
-		}
-		if ingress.Hostname != "" {
-			return ingress.Hostname
-		}
-	}
-	return ""
-}
-
-func validateVClusterPublicAddress(address string) error {
-	if address == "" || strings.TrimSpace(address) != address {
-		return fmt.Errorf("vCluster API LoadBalancer must report a bare IP address or DNS name")
-	}
-	if net.ParseIP(address) != nil || len(validation.IsDNS1123Subdomain(address)) == 0 {
-		return nil
-	}
-	return fmt.Errorf("invalid vCluster API LoadBalancer address %q: expected a bare IP address or DNS name without a scheme or port", address)
-}
-
-func vClusterExternalServer(address string) (string, error) {
-	if err := validateVClusterPublicAddress(address); err != nil {
-		return "", err
-	}
-	return "https://" + net.JoinHostPort(address, "443"), nil
-}
-
-func (r *LLMWorkloadEnvironmentReconciler) ensureOpenShiftVClusterEndpoint(
-	ctx context.Context,
-	environment *environmentv1alpha1.LLMWorkloadEnvironment,
-	namespace string,
-	kubeconfig []byte,
-) ([]byte, error) {
-	host, err := r.openShiftVClusterHost(ctx, environment)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := r.ensureOpenShiftRoute(ctx, environment, namespace, host); err != nil {
-		return nil, err
-	}
-
-	rewrittenKubeconfig, err := rewriteKubeconfigServer(kubeconfig, "https://"+host)
-	if err != nil {
-		return nil, fmt.Errorf("rewrite vCluster kubeconfig for Route %s: %w", host, err)
-	}
-	return rewrittenKubeconfig, nil
-}
-
-func (r *LLMWorkloadEnvironmentReconciler) openShiftVClusterHost(
-	ctx context.Context,
-	environment *environmentv1alpha1.LLMWorkloadEnvironment,
-) (string, error) {
-	appsDomain, err := r.openShiftAppsDomain(ctx)
-	if err != nil {
-		return "", fmt.Errorf("discover OpenShift applications domain: %w", err)
-	}
-	return environment.Name + "." + appsDomain, nil
-}
-
-func (r *LLMWorkloadEnvironmentReconciler) openShiftAppsDomain(ctx context.Context) (string, error) {
-	ingress := &unstructured.Unstructured{}
-	ingress.SetGroupVersionKind(openShiftIngressGVK)
-	if err := r.Get(ctx, types.NamespacedName{Name: "cluster"}, ingress); err != nil {
-		return "", err
-	}
-	if domain, found, err := unstructured.NestedString(ingress.Object, "spec", "domain"); err != nil {
-		return "", err
-	} else if found && domain != "" {
-		return domain, nil
-	}
-	if domain, found, err := unstructured.NestedString(ingress.Object, "status", "domain"); err != nil {
-		return "", err
-	} else if found && domain != "" {
-		return domain, nil
-	}
-	return "", errors.New("OpenShift Ingress object does not publish an applications domain")
-}
-
-func (r *LLMWorkloadEnvironmentReconciler) ensureOpenShiftRoute(
-	ctx context.Context,
-	environment *environmentv1alpha1.LLMWorkloadEnvironment,
-	namespace string,
-	host string,
-) error {
-	route := &unstructured.Unstructured{}
-	route.SetGroupVersionKind(openShiftRouteGVK)
-	routeKey := types.NamespacedName{Name: environment.Name, Namespace: namespace}
-	if err := r.Get(ctx, routeKey, route); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("get vCluster Route: %w", err)
-		}
-		route = desiredOpenShiftRoute(environment.Name, namespace, host)
-		markEnvironmentOwned(route, environment)
-		if err := r.Create(ctx, route); err != nil {
-			return fmt.Errorf("create vCluster Route: %w", err)
-		}
-		return nil
-	}
-	if !environmentOwns(route, environment) {
-		return fmt.Errorf("%w: %s/%s", ErrRouteCollision, namespace, environment.Name)
-	}
-
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
-		route.Object["spec"] = desiredOpenShiftRoute(environment.Name, namespace, host).Object["spec"]
-		markEnvironmentOwned(route, environment)
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("update vCluster Route: %w", err)
-	}
-	return nil
-}
-
-func desiredOpenShiftRoute(name, namespace, host string) *unstructured.Unstructured {
-	return &unstructured.Unstructured{Object: map[string]interface{}{
-		"apiVersion": openShiftRouteGVK.Group + "/" + openShiftRouteGVK.Version,
-		"kind":       openShiftRouteGVK.Kind,
-		"metadata": map[string]interface{}{
-			"name":      name,
-			"namespace": namespace,
-		},
-		"spec": map[string]interface{}{
-			"host": host,
-			"to": map[string]interface{}{
-				"kind":   "Service",
-				"name":   name,
-				"weight": int64(100),
-			},
-			"port": map[string]interface{}{
-				"targetPort": "https",
-			},
-			"tls": map[string]interface{}{
-				"termination": "passthrough",
-			},
-		},
-	}}
 }
 
 func kubeconfigSecretKey(secret *corev1.Secret) string {
@@ -923,26 +683,4 @@ func (r *LLMWorkloadEnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) er
 			})),
 		).
 		Complete(r)
-}
-
-func isVClusterAPIService(object client.Object) bool {
-	if !strings.HasSuffix(object.GetName(), VClusterAPIServiceSuffix) {
-		return false
-	}
-	return object.GetAnnotations()[EnvironmentOwnerAnnotation] != ""
-}
-
-func (r *LLMWorkloadEnvironmentReconciler) mapVClusterAPIService(_ context.Context, object client.Object) []reconcile.Request {
-	if !isVClusterAPIService(object) {
-		return nil
-	}
-	owner := strings.SplitN(object.GetAnnotations()[EnvironmentOwnerAnnotation], "/", 2)
-	if len(owner) != 2 || owner[0] == "" || owner[1] == "" {
-		return nil
-	}
-	return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: owner[0], Name: owner[1]}}}
-}
-
-func (r *LLMWorkloadEnvironmentReconciler) isOpenShift() bool {
-	return r.Platform == clusterplatform.PlatformOpenShift || (r.Platform == "" && r.OpenShift)
 }
