@@ -28,6 +28,14 @@ type helmRelease struct {
 	Status string `json:"status"`
 }
 
+type helmReleaseValues struct {
+	ControlPlane struct {
+		Proxy struct {
+			ExtraSANs []string `json:"extraSANs"`
+		} `json:"proxy"`
+	} `json:"controlPlane"`
+}
+
 func (h HelmInstaller) Ensure(ctx context.Context, name, namespace string, openShift bool, publicHost string) error {
 	helmPath := h.HelmPath
 	if helmPath == "" {
@@ -47,13 +55,39 @@ func (h HelmInstaller) Ensure(ctx context.Context, name, namespace string, openS
 		return fmt.Errorf("decode Helm release list: %w", err)
 	}
 	if releaseDeployed(releases) {
-		return nil
+		if publicHost == "" {
+			return nil
+		}
+		configured, err := h.releaseHasPublicHost(ctx, helmPath, name, namespace, publicHost)
+		if err != nil {
+			return fmt.Errorf("check vCluster Helm release public certificate SAN: %w", err)
+		}
+		if configured {
+			return nil
+		}
 	}
 
 	if _, err := h.run(ctx, helmPath, installArgs(name, namespace, chartPath, openShift, publicHost)...); err != nil {
 		return fmt.Errorf("install vCluster Helm release: %w", err)
 	}
 	return nil
+}
+
+func (h HelmInstaller) releaseHasPublicHost(ctx context.Context, helmPath, name, namespace, publicHost string) (bool, error) {
+	valuesJSON, err := h.run(ctx, helmPath, "get", "values", name, "--namespace", namespace, "--output", "json")
+	if err != nil {
+		return false, err
+	}
+	values := helmReleaseValues{}
+	if err := json.Unmarshal(valuesJSON, &values); err != nil {
+		return false, fmt.Errorf("decode Helm release values: %w", err)
+	}
+	for _, san := range values.ControlPlane.Proxy.ExtraSANs {
+		if san == publicHost {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func releaseDeployed(releases []helmRelease) bool {

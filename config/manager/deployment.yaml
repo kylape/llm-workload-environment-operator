@@ -23,6 +23,10 @@ spec:
             - --health-probe-bind-address=:8081
           image: quay.io/klape/llm-workload-environment-operator:latest
           name: manager
+          env:
+            # Supported values are openshift and coreweave. OpenShift is auto-detected when unset.
+            - name: PLATFORM
+              value: ""
           ports:
             - containerPort: 8081
               name: health

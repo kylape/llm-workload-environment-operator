@@ -49,9 +49,13 @@ For `VCluster` mode, the operator also installs the pinned vCluster chart and
 publishes its base64-encoded kubeconfig in status. On OpenShift, it also creates a
 TLS-passthrough Route at
 `<environment-name>.<cluster-applications-domain>` and publishes an
-updated kubeconfig with that public server URL. It retains the CA and certificate
-data provided by vCluster; certificate SAN handling for the public hostname is
-intentionally left for a later iteration.
+updated kubeconfig with that public server URL. The public hostname is added to
+the vCluster proxy certificate SANs. Set `PLATFORM=coreweave` on CoreWeave
+clusters; the operator creates a per-environment public LoadBalancer Service
+for the vCluster API and publishes a kubeconfig using its assigned address.
+OpenShift is detected automatically when `PLATFORM` is unset, or can be selected
+with `PLATFORM=openshift`; it uses Routes. Other Kubernetes clusters remain not
+ready with `VClusterPlatformNotConfigured` until a platform is selected.
 The vCluster can read host-cluster `StorageClass` and `CSIStorageCapacity`
 objects through a dedicated read-only role. The chart's own cluster-wide RBAC
 is disabled.

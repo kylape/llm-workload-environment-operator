@@ -123,9 +123,23 @@ provided by vCluster. The operator leaves the Helm-created kubeconfig Secret
 unchanged and publishes a kubeconfig in status whose server URL is
 `https://<environment-name>.<cluster-applications-domain>`. The public hostname
 is explicit rather than relying on the generated
-`<route-name>-<namespace>` form. Certificate SAN configuration for that
-hostname is deferred; the initial implementation deliberately reuses the
-vCluster-provided certificate material.
+`<route-name>-<namespace>` form. The hostname is added to the vCluster proxy
+certificate SANs.
+
+Set `PLATFORM=coreweave` on CoreWeave Kubernetes clusters. The operator creates
+a companion Service named
+`<environment-name>-api` with type `LoadBalancer` and the CoreWeave public
+LoadBalancer annotation. It exposes only HTTPS (Service port 443 to the vCluster
+proxy on 8443). Once CoreWeave assigns an address, the operator adds that address
+to the vCluster proxy certificate SANs and publishes
+`https://<assigned-address>:443` in `status.kubeconfig`.
+
+OpenShift remains a separate path: it is detected automatically if `PLATFORM`
+is unset, or can be selected with `PLATFORM=openshift`. The operator creates a
+TLS-passthrough Route and does not add CoreWeave annotations. On other Kubernetes
+clusters, vCluster mode remains not ready with condition
+`VClusterPlatformNotConfigured` until `PLATFORM` is set. This prevents
+provider-specific annotations from being applied to unrelated clusters.
 
 ## Status
 

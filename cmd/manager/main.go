@@ -60,7 +60,12 @@ func main() {
 		ctrl.Log.Error(err, "unable to determine cluster platform")
 		os.Exit(1)
 	}
-	ctrl.Log.Info("detected cluster platform", "openShift", openShift)
+	platform, err := environmentplatform.Resolve(os.Getenv("PLATFORM"), openShift)
+	if err != nil {
+		ctrl.Log.Error(err, "unable to resolve cluster platform")
+		os.Exit(1)
+	}
+	ctrl.Log.Info("resolved cluster platform", "platform", platform)
 
 	leaseDuration := 60 * time.Second
 	renewDeadline := 30 * time.Second
@@ -85,6 +90,7 @@ func main() {
 		Scheme:            manager.GetScheme(),
 		Kueue:             environmentcontroller.NewKueueAdapter(manager.GetClient(), discoveryClient),
 		VClusterInstaller: environmentvcluster.HelmInstaller{},
+		Platform:          platform,
 		OpenShift:         openShift,
 		APIServerURL:      config.Host,
 	}).SetupWithManager(manager); err != nil {
