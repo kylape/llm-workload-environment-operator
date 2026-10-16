@@ -565,7 +565,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureVCluster(
 		return nil, false, err
 	}
 	if statefulSet.Status.ReadyReplicas < 1 || (!r.isOpenShift() && publicHost != "" &&
-		(statefulSet.Status.UpdatedReadyReplicas < 1 || statefulSet.Status.CurrentRevision != statefulSet.Status.UpdateRevision)) {
+		(statefulSet.Status.UpdatedReplicas < 1 || statefulSet.Status.CurrentRevision != statefulSet.Status.UpdateRevision)) {
 		return nil, false, nil
 	}
 	secretName := "vc-" + environment.Name
