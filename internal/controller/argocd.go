@@ -123,6 +123,9 @@ func (r *LLMWorkloadEnvironmentReconciler) setArgoCDSecretReference(ctx context.
 	if err := r.patchEnvironmentStatus(ctx, environment, before); err != nil {
 		return argoCDAPIError("record Argo CD registration reference", err)
 	}
+	if !reflect.DeepEqual(environment.Status.ArgoCDClusterSecretRef, reference) {
+		return errors.New("Argo CD registration reference was not persisted; install the updated LWE CRD before enabling registration")
+	}
 	return nil
 }
 
