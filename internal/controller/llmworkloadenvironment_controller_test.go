@@ -343,7 +343,7 @@ func TestReconcileSupportsKueueAPIVersions(t *testing.T) {
 				Name:        environment.Namespace,
 				Annotations: map[string]string{AllowedClusterQueuesAnnotation: "development"},
 			}}
-			objects := []controllerclient.Object{environment, landingNamespace}
+			objects := []controllerclient.Object{environment, landingNamespace, testKueueAdmissionConfigMap()}
 			if test.createBeta1Queue {
 				objects = append(objects, &kueuev1beta1.ClusterQueue{ObjectMeta: metav1.ObjectMeta{Name: "development"}})
 			}
@@ -645,6 +645,9 @@ func (d testKueueDiscovery) ServerResourcesForGroupVersion(groupVersion string) 
 
 func testReconciler(t *testing.T, kubeClient controllerclient.Client, scheme *runtime.Scheme) *LLMWorkloadEnvironmentReconciler {
 	t.Helper()
+	if err := kubeClient.Create(context.Background(), testKueueAdmissionConfigMap()); err != nil {
+		t.Fatalf("create Kueue admission configuration: %v", err)
+	}
 	return &LLMWorkloadEnvironmentReconciler{
 		Client: kubeClient,
 		Scheme: scheme,
