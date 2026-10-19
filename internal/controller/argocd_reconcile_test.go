@@ -316,3 +316,37 @@ func containsStringSlice(values []string, value string) bool {
 	}
 	return false
 }
+
+func TestReconcileArgoCDPendingCleanupDoesNotHideStatusFailure(t *testing.T) {
+	ctx := context.Background()
+	r, environment, request := argoCDReconcileFixture(t)
+	if _, err := r.Reconcile(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	environment = loadArgoCDTestEnvironment(t, r.Client, environment)
+	delete(environment.Labels, ApplicationProfileLabel)
+	if err := r.Update(ctx, environment); err != nil {
+		t.Fatal(err)
+	}
+	underlying := r.Client.(client.WithWatch)
+	r.Client = interceptor.NewClient(underlying, interceptor.Funcs{
+		SubResourcePatch: func(ctx context.Context, c client.Client, resource string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+			if e, ok := obj.(*environmentv1alpha1.LLMWorkloadEnvironment); ok {
+				condition := apimeta.FindStatusCondition(e.Status.Conditions, environmentv1alpha1.ArgoCDRegisteredCondition)
+				if condition != nil && condition.Reason == "Unregistering" {
+					return errors.New("private-tenant-token")
+				}
+			}
+			return c.SubResource(resource).Patch(ctx, obj, patch, opts...)
+		},
+	})
+	if _, err := r.Reconcile(ctx, request); err == nil || strings.Contains(err.Error(), "private-tenant-token") {
+		t.Fatal("a failed status write must remain a sanitized retryable error")
+	}
+	r.Client = underlying
+	if _, err := r.Reconcile(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	environment = loadArgoCDTestEnvironment(t, r.Client, environment)
+	requireArgoCDCondition(t, environment, metav1.ConditionFalse, "NotRequested")
+}
