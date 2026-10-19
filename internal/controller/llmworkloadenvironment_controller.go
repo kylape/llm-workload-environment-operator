@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -59,8 +60,9 @@ type LLMWorkloadEnvironmentReconciler struct {
 	Platform          clusterplatform.Platform
 	// OpenShift retains compatibility for tests and callers that construct the
 	// reconciler directly. Production setup uses Platform.
-	OpenShift    bool
-	APIServerURL string
+	OpenShift       bool
+	APIServerURL    string
+	ArgoCDNamespace string
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -81,6 +83,31 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 		}
 		return ctrl.Result{Requeue: true}, nil
 	}
+	// Cleanup is independent of provisioning. A revoked queue must not stop
+	// label removal from unregistering an environment.
+	preparationErr := r.prepareArgoCDRegistration(ctx, environment)
+	result, provisionErr := r.reconcileEnvironment(ctx, environment, namespaceName)
+	registrationErr := r.reconcileArgoCDRegistration(ctx, environment, preparationErr)
+	if errors.Is(registrationErr, errArgoCDCleanupPending) {
+		if result.RequeueAfter == 0 || result.RequeueAfter > 2*time.Second {
+			result.RequeueAfter = 2 * time.Second
+		}
+		registrationErr = nil
+	}
+	if provisionErr == nil && registrationErr == nil && result.RequeueAfter == 0 &&
+		apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ArgoCDRegisteredCondition) {
+		// Repair missed watch events, including a transient lookup failure in a
+		// cross-namespace Secret event mapper.
+		result.RequeueAfter = 5 * time.Minute
+	}
+	return result, errors.Join(provisionErr, registrationErr)
+}
+
+func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
+	ctx context.Context,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
+	namespaceName string,
+) (ctrl.Result, error) {
 	if err := r.removeLegacyKubeconfigSecret(ctx, environment); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -625,7 +652,14 @@ func (r *LLMWorkloadEnvironmentReconciler) setReady(
 		Reason:             reason,
 		Message:            message,
 	})
-	return r.Status().Patch(ctx, environment, client.MergeFrom(before))
+	return r.patchEnvironmentStatus(ctx, environment, before)
+}
+
+func (r *LLMWorkloadEnvironmentReconciler) patchEnvironmentStatus(ctx context.Context, environment, before *environmentv1alpha1.LLMWorkloadEnvironment) error {
+	if reflect.DeepEqual(before.Status, environment.Status) {
+		return nil
+	}
+	return r.Status().Patch(ctx, environment, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{}))
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) finalize(
@@ -635,6 +669,13 @@ func (r *LLMWorkloadEnvironmentReconciler) finalize(
 ) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(environment, FinalizerName) {
 		return ctrl.Result{}, nil
+	}
+
+	if err := r.finalizeArgoCDRegistration(ctx, environment); err != nil {
+		if errors.Is(err, errArgoCDCleanupPending) {
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		}
+		return ctrl.Result{}, err
 	}
 
 	if err := r.removeLegacyKubeconfigSecret(ctx, environment); err != nil {
@@ -675,6 +716,11 @@ func (r *LLMWorkloadEnvironmentReconciler) finalize(
 func (r *LLMWorkloadEnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&environmentv1alpha1.LLMWorkloadEnvironment{}).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.mapArgoCDSecret),
+			builder.WithPredicates(argoCDSecretPredicate()),
+		).
 		Watches(
 			&corev1.Service{},
 			handler.EnqueueRequestsFromMapFunc(r.mapVClusterAPIService),
