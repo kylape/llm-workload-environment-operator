@@ -18,8 +18,8 @@ recorded registrations; it does not leave their credentials behind.
 
 Install the updated LWE CRD before rolling out this controller. The optional
 `status.argoCDClusterSecretRef` field is needed to record registration ownership
-before creating a Secret. Without the updated schema, a cluster may prune the
-reference and prevent safe cleanup.
+before creating a Secret. The controller verifies the persisted reference with
+an uncached API read and refuses registration if an old schema prunes it.
 
 The existing operator ClusterRole already grants the required Secret
 permissions. Tenant requester permissions do not change. The operator does not
