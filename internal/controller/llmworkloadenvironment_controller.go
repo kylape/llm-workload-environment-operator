@@ -54,6 +54,7 @@ var ErrNamespaceKubeconfigTokenSecretCollision = errors.New("environment kubecon
 
 type LLMWorkloadEnvironmentReconciler struct {
 	client.Client
+	APIReader         client.Reader
 	Scheme            *runtime.Scheme
 	Kueue             KueueClient
 	VClusterInstaller environmentvcluster.Installer
