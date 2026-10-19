@@ -43,7 +43,7 @@ func TestKueueAdmissionEnvironment(t *testing.T) {
 		{name: "defaults"},
 		{name: "custom", env: map[string]string{
 			"KUEUE_NAMESPACE_LABELS": `{"kueue.x-k8s.io/managed":"true","team":"inference"}`,
-			"KUEUE_CONFIG_NAMESPACE": "custom-kueue", "KUEUE_CONFIG_NAME": "settings", "KUEUE_CONFIG_KEY": "config.yaml",
+			"KUEUE_CONFIG_REF":       "custom-kueue:settings:config.yaml",
 		}},
 		{name: "disabled", env: map[string]string{"KUEUE_ADMISSION_ENABLED": "false"}},
 		{name: "empty labels", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{}`}},
@@ -55,9 +55,14 @@ func TestKueueAdmissionEnvironment(t *testing.T) {
 		{name: "invalid label key", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{"bad key":"true"}`}, invalid: true},
 		{name: "invalid label value", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{"managed":"bad value"}`}, invalid: true},
 		{name: "reserved label", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{"llm.redhat.com/environment":"other"}`}, invalid: true},
-		{name: "invalid namespace", env: map[string]string{"KUEUE_CONFIG_NAMESPACE": "Bad"}, invalid: true},
-		{name: "invalid config name", env: map[string]string{"KUEUE_CONFIG_NAME": "bad/name"}, invalid: true},
-		{name: "invalid config key", env: map[string]string{"KUEUE_CONFIG_KEY": "../config"}, invalid: true},
+		{name: "invalid namespace", env: map[string]string{"KUEUE_CONFIG_REF": "Bad:settings:config.yaml"}, invalid: true},
+		{name: "invalid config name", env: map[string]string{"KUEUE_CONFIG_REF": "kueue-system:bad/name:config.yaml"}, invalid: true},
+		{name: "invalid config key", env: map[string]string{"KUEUE_CONFIG_REF": "kueue-system:settings:../config"}, invalid: true},
+		{name: "missing part", env: map[string]string{"KUEUE_CONFIG_REF": "kueue-system:settings"}, invalid: true},
+		{name: "extra part", env: map[string]string{"KUEUE_CONFIG_REF": "kueue-system:settings:config.yaml:extra"}, invalid: true},
+		{name: "empty namespace", env: map[string]string{"KUEUE_CONFIG_REF": ":settings:config.yaml"}, invalid: true},
+		{name: "empty name", env: map[string]string{"KUEUE_CONFIG_REF": "kueue-system::config.yaml"}, invalid: true},
+		{name: "empty key", env: map[string]string{"KUEUE_CONFIG_REF": "kueue-system:settings:"}, invalid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := KueueAdmissionConfigFromEnv(func(key string) string { return tc.env[key] })
@@ -77,6 +82,9 @@ func TestKueueAdmissionEnvironment(t *testing.T) {
 			}
 			if tc.name == "empty labels" && len(c.NamespaceLabels) != 0 {
 				t.Fatal("default label was retained")
+			}
+			if tc.name == "defaults" && (c.ConfigNamespace != "kueue-system" || c.ConfigName != "kueue-manager-config" || c.ConfigKey != "controller_manager_config.yaml") {
+				t.Fatalf("unexpected default reference: %#v", c)
 			}
 		})
 	}
