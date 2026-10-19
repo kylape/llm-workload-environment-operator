@@ -95,7 +95,10 @@ including `ephemeral-storage` in addition to CPU and memory.
 
 The operator installs vCluster from the pinned
 `quay.io/klape/charts/vcluster:0.0.1-combined.4` chart with the
-`quay.io/klape/vcluster:csi-capacity-debug-v26` control-plane image. The chart
+`quay.io/klape/vcluster:kueue-gates-37b50bb1c` control-plane image, pinned to
+`sha256:65be5418b44645e1abaebad77e90792d9e5b42ce552db6e514b8160488db67ef`.
+This build preserves host-added scheduling gates during Pod synchronization.
+The chart
 is downloaded and checksum-verified while building the operator image, then
 installed from that bundled artifact without runtime registry access.
 
