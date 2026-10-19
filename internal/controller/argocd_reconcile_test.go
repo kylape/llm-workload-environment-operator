@@ -47,7 +47,7 @@ func argoCDReconcileFixture(t *testing.T) (*LLMWorkloadEnvironmentReconciler, *e
 	config := testArgoCDKubeconfig()
 	config.Clusters["public"].Server = "https://internal-api.env-example.svc"
 	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "vc-" + environment.Name, Namespace: namespace.Name}, Data: map[string][]byte{"config": encodeArgoCDTestKubeconfig(t, config)}}
-	c := argoCDTestClient(t, environment, landing, namespace, statefulSet, service, secret)
+	c := argoCDTestClient(t, environment, landing, namespace, statefulSet, service, secret, testKueueAdmissionConfigMap())
 	r := &LLMWorkloadEnvironmentReconciler{
 		Client: c, Scheme: testScheme(t), Kueue: readyArgoCDTestKueue{}, Platform: clusterplatform.PlatformCoreWeave,
 		VClusterInstaller: &recordingVClusterInstaller{}, ArgoCDNamespace: "argocd",
