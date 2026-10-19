@@ -27,6 +27,10 @@ spec:
             # Supported values are openshift and coreweave. OpenShift is auto-detected when unset.
             - name: PLATFORM
               value: ""
+            # Optional: register labeled vClusters in this Argo CD namespace.
+            # Empty disables registration; recorded registrations are cleaned up.
+            - name: ARGOCD_NAMESPACE
+              value: ""
           ports:
             - containerPort: 8081
               name: health
