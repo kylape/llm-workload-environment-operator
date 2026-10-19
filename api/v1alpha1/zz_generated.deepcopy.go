@@ -15,7 +15,7 @@ func (in *LLMWorkloadEnvironment) DeepCopyInto(out *LLMWorkloadEnvironment) {
 	*out = *in
 	out.TypeMeta = in.TypeMeta
 	in.ObjectMeta.DeepCopyInto(&out.ObjectMeta)
-	in.Spec.DeepCopyInto(&out.Spec)
+	out.Spec = in.Spec
 	in.Status.DeepCopyInto(&out.Status)
 }
 
@@ -96,6 +96,11 @@ func (in *LLMWorkloadEnvironmentStatus) DeepCopyInto(out *LLMWorkloadEnvironment
 		in, out := &in.Kubeconfig, &out.Kubeconfig
 		*out = make([]byte, len(*in))
 		copy(*out, *in)
+	}
+	if in.ArgoCDClusterSecretRef != nil {
+		in, out := &in.ArgoCDClusterSecretRef, &out.ArgoCDClusterSecretRef
+		*out = new(v1.SecretReference)
+		**out = **in
 	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
