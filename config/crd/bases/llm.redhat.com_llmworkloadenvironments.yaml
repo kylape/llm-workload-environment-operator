@@ -51,8 +51,9 @@ spec:
             properties:
               clusterQueue:
                 default: inference-workspaces
-                description: ClusterQueue is the Kueue ClusterQueue that backs the
-                  environment's default LocalQueue.
+                description: |-
+                  ClusterQueue is the Kueue ClusterQueue that backs the environment's
+                  default LocalQueue.
                 maxLength: 253
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                 type: string
@@ -61,8 +62,7 @@ spec:
                   rule: self == oldSelf
               mode:
                 default: Namespace
-                description: Mode selects a direct host namespace or an isolated
-                  vCluster.
+                description: Mode selects a direct host namespace or an isolated vCluster.
                 enum:
                 - Namespace
                 - VCluster
@@ -73,8 +73,26 @@ spec:
             type: object
           status:
             properties:
+              argoCDClusterSecretRef:
+                description: |-
+                  ArgoCDClusterSecretRef records the registration Secret to reconcile or clean
+                  up, including when the integration is disabled or its namespace changes.
+                  The reference is persisted before Secret creation; use ArgoCDRegistered
+                  to determine whether registration has succeeded.
+                properties:
+                  name:
+                    description: name is unique within a namespace to reference a
+                      secret resource.
+                    type: string
+                  namespace:
+                    description: namespace defines the space within which the secret
+                      name must be unique.
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               conditions:
-                description: Conditions contains the aggregate Ready condition.
+                description: Conditions contains environment readiness and Argo CD
+                  registration status.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
