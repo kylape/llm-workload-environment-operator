@@ -51,6 +51,7 @@ func TestKueueAdmissionEnvironment(t *testing.T) {
 		{name: "invalid json", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `managed=true`}, invalid: true},
 		{name: "null labels", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `null`}, invalid: true},
 		{name: "non-string labels", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{"managed":true}`}, invalid: true},
+		{name: "null label value", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{"managed":null}`}, invalid: true},
 		{name: "invalid label key", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{"bad key":"true"}`}, invalid: true},
 		{name: "invalid label value", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{"managed":"bad value"}`}, invalid: true},
 		{name: "reserved label", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{"llm.redhat.com/environment":"other"}`}, invalid: true},
@@ -99,8 +100,22 @@ integrations:
           operator: In
           values: ["true"]
 `, matches: true},
-		{name: "all conditions evaluated", config: testKueueAdmissionYAML + `  podOptions: {}
+		{name: "modern takes precedence", config: testKueueAdmissionYAML + `  podOptions:
+    namespaceSelector:
+      matchLabels:
+        other: required
 `, matches: true},
+		{name: "all conditions evaluated", config: `apiVersion: config.kueue.x-k8s.io/v1beta2
+kind: Configuration
+integrations:
+  frameworks: [pod]
+managedJobsNamespaceSelector:
+  matchLabels:
+    kueue.openshift.io/managed: "true"
+  matchExpressions:
+    - key: team
+      operator: Exists
+`},
 		{name: "namespace mismatch", config: strings.ReplaceAll(testKueueAdmissionYAML, "kueue.openshift.io", "kueue.x-k8s.io")},
 		{name: "invalid yaml", config: "[", invalid: true},
 		{name: "missing data", config: "", invalid: true},
@@ -109,6 +124,7 @@ integrations:
 		{name: "no pod integration", config: strings.ReplaceAll(testKueueAdmissionYAML, "[pod]", "[batch/job]"), invalid: true},
 		{name: "implicit selector", config: "apiVersion: config.kueue.x-k8s.io/v1beta2\nkind: Configuration\nintegrations:\n  frameworks: [pod]\n", invalid: true},
 		{name: "invalid expression", config: "apiVersion: config.kueue.x-k8s.io/v1beta2\nkind: Configuration\nintegrations:\n  frameworks: [pod]\nmanagedJobsNamespaceSelector:\n  matchExpressions:\n    - key: managed\n      operator: Invalid\n", invalid: true},
+		{name: "invalid selector label", config: strings.ReplaceAll(testKueueAdmissionYAML, "kueue.openshift.io/managed", "bad key"), invalid: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			selector, err := kueuePodNamespaceSelector([]byte(tc.config))
@@ -152,6 +168,31 @@ func TestKueueNamespaceLabelMigrationAndDisable(t *testing.T) {
 	}
 	if ns.Labels["kueue.x-k8s.io/managed"] != "admin-value" {
 		t.Fatal("administrator edit was removed")
+	}
+	ns.Annotations[kueueNamespaceLabelsAnnotation] = `{"llm.redhat.com/environment":"example"}`
+	if err := r.applyKueueNamespaceLabels(ns); err == nil {
+		t.Fatal("reserved labels in migration record were accepted")
+	}
+}
+
+func TestKueueAdmissionUsesConfiguredReferenceAndLiveReader(t *testing.T) {
+	ctx := context.Background()
+	config := DefaultKueueAdmissionConfig()
+	config.ConfigNamespace, config.ConfigName, config.ConfigKey = "custom", "policy", "settings.yaml"
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "env-example", Labels: map[string]string{KueueManagedLabel: "true"}}}
+	cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: config.ConfigName, Namespace: config.ConfigNamespace}, Data: map[string]string{config.ConfigKey: testKueueAdmissionYAML}}
+	live := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(ns, cm).Build()
+	// A stale cache lacks both objects; validation must use APIReader.
+	r := &LLMWorkloadEnvironmentReconciler{Client: fake.NewClientBuilder().WithScheme(testScheme(t)).Build(), APIReader: live, KueueAdmission: &config}
+	if reason, err := r.validateKueueAdmission(ctx, ns.Name); reason != "" || err != nil {
+		t.Fatalf("live validation failed: %s %v", reason, err)
+	}
+	delete(cm.Data, config.ConfigKey)
+	if err := live.Update(ctx, cm); err != nil {
+		t.Fatal(err)
+	}
+	if reason, err := r.validateKueueAdmission(ctx, ns.Name); reason != "KueueAdmissionConfigurationInvalid" || err == nil {
+		t.Fatalf("missing configured data key was accepted: %s %v", reason, err)
 	}
 }
 
