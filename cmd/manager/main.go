@@ -54,6 +54,11 @@ func main() {
 		ctrl.Log.Error(err, "invalid Argo CD registration configuration")
 		os.Exit(1)
 	}
+	kueueAdmission, err := environmentcontroller.KueueAdmissionConfigFromEnv(os.Getenv)
+	if err != nil {
+		ctrl.Log.Error(err, "invalid Kueue admission configuration")
+		os.Exit(1)
+	}
 
 	config := ctrl.GetConfigOrDie()
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
@@ -101,6 +106,7 @@ func main() {
 		OpenShift:         openShift,
 		APIServerURL:      config.Host,
 		ArgoCDNamespace:   argoCDNamespace,
+		KueueAdmission:    &kueueAdmission,
 	}).SetupWithManager(manager); err != nil {
 		ctrl.Log.Error(err, "unable to create controller")
 		os.Exit(1)
