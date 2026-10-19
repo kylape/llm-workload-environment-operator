@@ -39,13 +39,9 @@ spec:
             # {"kueue.x-k8s.io/managed":"true"} when that matches host policy.
             - name: KUEUE_NAMESPACE_LABELS
               value: '{"kueue.openshift.io/managed":"true"}'
-            # Point at the configuration used by the host Kueue controller.
-            - name: KUEUE_CONFIG_NAMESPACE
-              value: kueue-system
-            - name: KUEUE_CONFIG_NAME
-              value: kueue-manager-config
-            - name: KUEUE_CONFIG_KEY
-              value: controller_manager_config.yaml
+            # Host Kueue configuration reference: namespace:name:data-key.
+            - name: KUEUE_CONFIG_REF
+              value: kueue-system:kueue-manager-config:controller_manager_config.yaml
           ports:
             - containerPort: 8081
               name: health
