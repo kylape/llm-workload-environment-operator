@@ -9,14 +9,16 @@ These settings belong on the operator Deployment, rather than tenant LWE CRs.
 | --- | --- | --- |
 | `KUEUE_ADMISSION_ENABLED` | `true` | Apply admission labels and require selector validation. Set `false` for an explicit administrator opt-out. |
 | `KUEUE_NAMESPACE_LABELS` | `{"kueue.openshift.io/managed":"true"}` | JSON object of namespace label keys and string values. Replaces the default map; `{}` adds no labels. |
-| `KUEUE_CONFIG_NAMESPACE` | `kueue-system` | Namespace containing the host Kueue configuration ConfigMap. |
-| `KUEUE_CONFIG_NAME` | `kueue-manager-config` | Configuration ConfigMap name. |
-| `KUEUE_CONFIG_KEY` | `controller_manager_config.yaml` | ConfigMap data key containing Kueue configuration YAML. |
+| `KUEUE_CONFIG_REF` | `kueue-system:kueue-manager-config:controller_manager_config.yaml` | Kueue configuration reference, formatted as `namespace:name:key`. |
 
 Malformed booleans, label maps, Kubernetes names, and attempts to override LWE
 identity labels fail operator startup. The default namespace label preserves
 compatibility with existing OpenShift installations; it is not a universal
 Kueue requirement. Configure the map to match the host installation's policy.
+
+`KUEUE_CONFIG_REF` requires exactly three nonempty components. Each component
+is validated as a Kubernetes namespace, ConfigMap name, or data key respectively.
+Leaving the variable unset or empty uses the complete default reference.
 
 For Kermit's current configuration:
 
@@ -26,12 +28,8 @@ env:
     value: "true"
   - name: KUEUE_NAMESPACE_LABELS
     value: '{"kueue.x-k8s.io/managed":"true"}'
-  - name: KUEUE_CONFIG_NAMESPACE
-    value: kueue-system
-  - name: KUEUE_CONFIG_NAME
-    value: kueue-manager-config
-  - name: KUEUE_CONFIG_KEY
-    value: controller_manager_config.yaml
+  - name: KUEUE_CONFIG_REF
+    value: kueue-system:kueue-manager-config:controller_manager_config.yaml
 ```
 
 ## Validation and readiness
