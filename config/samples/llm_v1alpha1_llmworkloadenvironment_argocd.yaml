@@ -1,0 +1,10 @@
+apiVersion: llm.redhat.com/v1alpha1
+kind: LLMWorkloadEnvironment
+metadata:
+  name: alice-gitops
+  namespace: alice-dev
+  labels:
+    llm.redhat.com/application-profile: demo
+spec:
+  mode: VCluster
+  clusterQueue: inference-workspaces
