@@ -64,6 +64,7 @@ type LLMWorkloadEnvironmentReconciler struct {
 	OpenShift       bool
 	APIServerURL    string
 	ArgoCDNamespace string
+	KueueAdmission  *KueueAdmissionConfig
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -130,6 +131,9 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 		}
 		return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 	}
+	if reason, err := r.validateKueueAdmission(ctx, namespaceName); err != nil {
+		return r.notReady(ctx, environment, namespaceName, reason, err.Error(), 30*time.Second, nil)
+	}
 	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeNamespace {
 		if err := r.ensureNamespaceKubeconfigServiceAccount(ctx, environment, namespaceName); err != nil {
 			return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
@@ -181,6 +185,10 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 	if err := r.setReady(ctx, environment, namespaceName, kubeconfig, metav1.ConditionTrue, "Ready", "Environment is ready"); err != nil {
 		return ctrl.Result{}, err
 	}
+	if r.kueueAdmissionConfig().Enabled {
+		// Revalidate configuration drift even when no Argo CD profile is present.
+		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -199,6 +207,9 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespace(
 				Annotations: environmentOwnershipAnnotations(environment),
 			},
 		}
+		if err := r.applyKueueNamespaceLabels(namespace); err != nil {
+			return err
+		}
 		return r.Create(ctx, namespace)
 	}
 	if err != nil {
@@ -207,6 +218,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespace(
 	if !environmentOwns(namespace, environment) {
 		return fmt.Errorf("%w: %s", ErrNamespaceCollision, name)
 	}
+	before := namespace.DeepCopy()
 	if namespace.Labels == nil {
 		namespace.Labels = make(map[string]string)
 	}
@@ -226,6 +238,10 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespace(
 			changed = true
 		}
 	}
+	if err := r.applyKueueNamespaceLabels(namespace); err != nil {
+		return err
+	}
+	changed = changed || !reflect.DeepEqual(before.Labels, namespace.Labels) || !reflect.DeepEqual(before.Annotations, namespace.Annotations)
 	if changed {
 		return r.Update(ctx, namespace)
 	}
@@ -236,7 +252,6 @@ func environmentNamespaceLabels(environment *environmentv1alpha1.LLMWorkloadEnvi
 	return map[string]string{
 		"app.kubernetes.io/managed-by": "llm-workload-environment-operator",
 		"llm.redhat.com/environment":   environment.Name,
-		KueueManagedLabel:              "true",
 	}
 }
 
