@@ -198,6 +198,9 @@ func TestArgoCDClusterSecretSynchronization(t *testing.T) {
 	config.AuthInfos["tenant"].Token = "rotated-token"
 	config.Clusters["public"].Server = "https://203.0.113.20:443"
 	environment.Labels[ApplicationProfileLabel] = "another-profile"
+	if err := c.Update(ctx, environment); err != nil {
+		t.Fatal(err)
+	}
 	if err := r.ensureArgoCDClusterSecret(ctx, environment, encodeArgoCDTestKubeconfig(t, config)); err != nil {
 		t.Fatal(err)
 	}
@@ -462,5 +465,34 @@ func TestValidateArgoCDNamespace(t *testing.T) {
 		if ValidateArgoCDNamespace(namespace) == nil {
 			t.Fatal("invalid namespace accepted")
 		}
+	}
+}
+
+func TestArgoCDRefusesSecretCreationWhenCRDPrunesReference(t *testing.T) {
+	ctx := context.Background()
+	environment := newArgoCDTestEnvironment(t)
+	c := argoCDTestClient(t, environment)
+	environment = loadArgoCDTestEnvironment(t, c, environment)
+	creates := 0
+	pruningClient := interceptor.NewClient(c, interceptor.Funcs{
+		SubResourcePatch: func(ctx context.Context, underlying client.Client, resource string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+			if err := underlying.SubResource(resource).Patch(ctx, obj, patch, opts...); err != nil {
+				return err
+			}
+			// Model an old CRD pruning the field while the patch response
+			// leaves the caller's in-memory reference intact.
+			persisted := loadArgoCDTestEnvironment(t, underlying, environment)
+			persisted.Status.ArgoCDClusterSecretRef = nil
+			return underlying.Status().Update(ctx, persisted)
+		},
+		Create: func(context.Context, client.WithWatch, client.Object, ...client.CreateOption) error {
+			creates++
+			return nil
+		},
+	})
+	r := &LLMWorkloadEnvironmentReconciler{Client: pruningClient, APIReader: c, ArgoCDNamespace: "argocd"}
+	err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig)
+	if err == nil || !strings.Contains(err.Error(), "updated LWE CRD") || creates != 0 {
+		t.Fatal("an old CRD must not allow creation of credentials without durable cleanup intent")
 	}
 }
