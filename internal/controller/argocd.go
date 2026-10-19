@@ -123,8 +123,23 @@ func (r *LLMWorkloadEnvironmentReconciler) setArgoCDSecretReference(ctx context.
 	if err := r.patchEnvironmentStatus(ctx, environment, before); err != nil {
 		return argoCDAPIError("record Argo CD registration reference", err)
 	}
-	if !reflect.DeepEqual(environment.Status.ArgoCDClusterSecretRef, reference) {
+	// Read into a fresh object using an uncached client. Besides informer lag,
+	// decoding a pruned status field back into an existing object can retain
+	// its old in-memory value. Neither is proof that intent is durable.
+	reader := r.APIReader
+	if reader == nil {
+		reader = r.Client
+	}
+	persisted := &environmentv1alpha1.LLMWorkloadEnvironment{}
+	if err := reader.Get(ctx, client.ObjectKeyFromObject(environment), persisted); err != nil {
+		return argoCDAPIError("verify Argo CD registration reference", err)
+	}
+	if persisted.UID != environment.UID || !reflect.DeepEqual(persisted.Status.ArgoCDClusterSecretRef, reference) {
 		return errors.New("Argo CD registration reference was not persisted; install the updated LWE CRD before enabling registration")
+	}
+	if reference != nil && (persisted.DeletionTimestamp != nil || !argoCDRegistrationRequested(persisted) ||
+		persisted.Labels[ApplicationProfileLabel] != environment.Labels[ApplicationProfileLabel]) {
+		return errors.New("environment registration request changed; retry with the current environment")
 	}
 	return nil
 }
