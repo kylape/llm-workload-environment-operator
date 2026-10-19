@@ -9,9 +9,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metavalidation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/yaml"
 )
 
@@ -46,11 +48,18 @@ func KueueAdmissionConfigFromEnv(getenv func(string) string) (KueueAdmissionConf
 	}
 	if value := getenv("KUEUE_NAMESPACE_LABELS"); value != "" {
 		// Decode into a fresh map: an override replaces the default label.
-		var configured map[string]string
+		var configured map[string]interface{}
 		if err := json.Unmarshal([]byte(value), &configured); err != nil || configured == nil {
 			return c, fmt.Errorf("KUEUE_NAMESPACE_LABELS must be a JSON object of string label values")
 		}
-		c.NamespaceLabels = configured
+		c.NamespaceLabels = make(map[string]string, len(configured))
+		for key, value := range configured {
+			text, ok := value.(string)
+			if !ok {
+				return c, fmt.Errorf("KUEUE_NAMESPACE_LABELS value for %q must be a string", key)
+			}
+			c.NamespaceLabels[key] = text
+		}
 	}
 	for key, value := range c.NamespaceLabels {
 		if errs := validation.IsQualifiedName(key); len(errs) != 0 {
@@ -115,6 +124,10 @@ func (r *LLMWorkloadEnvironmentReconciler) applyKueueNamespaceLabels(namespace *
 		namespace.Labels = map[string]string{}
 	}
 	for key, value := range previous {
+		switch key {
+		case "kubernetes.io/metadata.name", "app.kubernetes.io/managed-by", "llm.redhat.com/environment":
+			return fmt.Errorf("recorded Kueue namespace labels contain reserved label %q", key)
+		}
 		if _, keep := desired[key]; !keep && namespace.Labels[key] == value {
 			delete(namespace.Labels, key)
 		}
@@ -166,6 +179,9 @@ func kueuePodNamespaceSelector(data []byte) (labels.Selector, error) {
 	}
 	if selector == nil {
 		return nil, fmt.Errorf("Kueue namespace selection is implicit; configure managedJobsNamespaceSelector explicitly so LWE can validate it")
+	}
+	if errs := metavalidation.ValidateLabelSelector(selector, metavalidation.LabelSelectorValidationOptions{}, field.NewPath("namespaceSelector")); len(errs) != 0 {
+		return nil, fmt.Errorf("invalid Kueue namespace selector: %w", errs.ToAggregate())
 	}
 	result, err := metav1.LabelSelectorAsSelector(selector)
 	if err != nil {
