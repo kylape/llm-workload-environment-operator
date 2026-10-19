@@ -93,6 +93,7 @@ func main() {
 
 	if err := (&environmentcontroller.LLMWorkloadEnvironmentReconciler{
 		Client:            manager.GetClient(),
+		APIReader:         manager.GetAPIReader(),
 		Scheme:            manager.GetScheme(),
 		Kueue:             environmentcontroller.NewKueueAdapter(manager.GetClient(), discoveryClient),
 		VClusterInstaller: environmentvcluster.HelmInstaller{},
