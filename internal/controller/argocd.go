@@ -231,8 +231,7 @@ func (r *LLMWorkloadEnvironmentReconciler) removeArgoCDClusterSecret(ctx context
 	return errArgoCDCleanupPending
 }
 
-func (r *LLMWorkloadEnvironmentReconciler) reconcileArgoCDRegistration(ctx context.Context, environment *environmentv1alpha1.LLMWorkloadEnvironment, preparationErr error) error {
-	before := environment.DeepCopy()
+func (r *LLMWorkloadEnvironmentReconciler) reconcileArgoCDRegistration(ctx context.Context, environment *environmentv1alpha1.LLMWorkloadEnvironment, preparationErr, provisionErr error) error {
 	condition := metav1.Condition{Type: environmentv1alpha1.ArgoCDRegisteredCondition, Status: metav1.ConditionFalse, ObservedGeneration: environment.Generation}
 	var registrationErr error
 	switch {
@@ -244,7 +243,7 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileArgoCDRegistration(ctx conte
 		condition.Reason, condition.Message = "UnsupportedMode", "Argo CD registration supports VCluster environments only"
 	case r.ArgoCDNamespace == "":
 		condition.Reason, condition.Message = "IntegrationDisabled", "ARGOCD_NAMESPACE is not configured"
-	case !apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ReadyCondition):
+	case provisionErr != nil || !apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ReadyCondition):
 		condition.Reason, condition.Message = "WaitingForEnvironment", "Waiting for ready environment credentials"
 		if environment.Status.ArgoCDClusterSecretRef != nil {
 			condition.Status = metav1.ConditionUnknown
@@ -264,7 +263,7 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileArgoCDRegistration(ctx conte
 	}
 	// ensureArgoCDClusterSecret may have persisted the reference. Use the
 	// latest resource version and status as the base for this second patch.
-	before = environment.DeepCopy()
+	before := environment.DeepCopy()
 	apimeta.SetStatusCondition(&environment.Status.Conditions, condition)
 	if err := r.patchEnvironmentStatus(ctx, environment, before); err != nil {
 		return errors.Join(registrationErr, argoCDAPIError("record Argo CD registration condition", err))
