@@ -73,23 +73,21 @@ func KueueAdmissionConfigFromEnv(getenv func(string) string) (KueueAdmissionConf
 			return c, fmt.Errorf("KUEUE_NAMESPACE_LABELS cannot override reserved label %q", key)
 		}
 	}
-	if value := getenv("KUEUE_CONFIG_NAMESPACE"); value != "" {
-		c.ConfigNamespace = value
-	}
-	if value := getenv("KUEUE_CONFIG_NAME"); value != "" {
-		c.ConfigName = value
-	}
-	if value := getenv("KUEUE_CONFIG_KEY"); value != "" {
-		c.ConfigKey = value
+	if value := getenv("KUEUE_CONFIG_REF"); value != "" {
+		parts := strings.Split(value, ":")
+		if len(parts) != 3 {
+			return c, fmt.Errorf("KUEUE_CONFIG_REF must have the form namespace:name:key")
+		}
+		c.ConfigNamespace, c.ConfigName, c.ConfigKey = parts[0], parts[1], parts[2]
 	}
 	if errs := validation.IsDNS1123Label(c.ConfigNamespace); len(errs) != 0 {
-		return c, fmt.Errorf("invalid KUEUE_CONFIG_NAMESPACE: %s", strings.Join(errs, ", "))
+		return c, fmt.Errorf("invalid KUEUE_CONFIG_REF namespace: %s", strings.Join(errs, ", "))
 	}
 	if errs := validation.IsDNS1123Subdomain(c.ConfigName); len(errs) != 0 {
-		return c, fmt.Errorf("invalid KUEUE_CONFIG_NAME: %s", strings.Join(errs, ", "))
+		return c, fmt.Errorf("invalid KUEUE_CONFIG_REF name: %s", strings.Join(errs, ", "))
 	}
 	if errs := validation.IsConfigMapKey(c.ConfigKey); len(errs) != 0 {
-		return c, fmt.Errorf("invalid KUEUE_CONFIG_KEY: %s", strings.Join(errs, ", "))
+		return c, fmt.Errorf("invalid KUEUE_CONFIG_REF key: %s", strings.Join(errs, ", "))
 	}
 	return c, nil
 }
