@@ -13,6 +13,7 @@ spec:
     plural: llmworkloadenvironments
     shortNames:
     - llmwe
+    - lwe
     singular: llmworkloadenvironment
   scope: Namespaced
   versions:
