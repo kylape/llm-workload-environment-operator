@@ -100,7 +100,7 @@ func installArgs(name, namespace, chartPath string, openShift bool, publicHost s
 		"--namespace", namespace,
 		"--set-string", "controlPlane.statefulSet.image.registry=quay.io",
 		"--set-string", "controlPlane.statefulSet.image.repository=klape/vcluster",
-		"--set-string", "controlPlane.statefulSet.image.tag=csi-capacity-debug-v26",
+		"--set-string", "controlPlane.statefulSet.image.tag=kueue-gates-37b50bb1c@sha256:65be5418b44645e1abaebad77e90792d9e5b42ce552db6e514b8160488db67ef",
 		"--set", "rbac.clusterRole.enabled=false",
 		"--set", "controlPlane.backingStore.etcd.deploy.enabled=true",
 		"--set", "controlPlane.statefulSet.persistence.volumeClaim.enabled=true",
