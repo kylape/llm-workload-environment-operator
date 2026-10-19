@@ -88,7 +88,7 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 	preparationErr := r.prepareArgoCDRegistration(ctx, environment)
 	result, provisionErr := r.reconcileEnvironment(ctx, environment, namespaceName)
 	registrationErr := r.reconcileArgoCDRegistration(ctx, environment, preparationErr, provisionErr)
-	if errors.Is(registrationErr, errArgoCDCleanupPending) {
+	if registrationErr == errArgoCDCleanupPending {
 		if result.RequeueAfter == 0 || result.RequeueAfter > 2*time.Second {
 			result.RequeueAfter = 2 * time.Second
 		}
