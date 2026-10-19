@@ -49,6 +49,12 @@ func main() {
 	flag.Parse()
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOptions)))
 
+	argoCDNamespace := os.Getenv("ARGOCD_NAMESPACE")
+	if err := environmentcontroller.ValidateArgoCDNamespace(argoCDNamespace); err != nil {
+		ctrl.Log.Error(err, "invalid Argo CD registration configuration")
+		os.Exit(1)
+	}
+
 	config := ctrl.GetConfigOrDie()
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
@@ -93,6 +99,7 @@ func main() {
 		Platform:          platform,
 		OpenShift:         openShift,
 		APIServerURL:      config.Host,
+		ArgoCDNamespace:   argoCDNamespace,
 	}).SetupWithManager(manager); err != nil {
 		ctrl.Log.Error(err, "unable to create controller")
 		os.Exit(1)
