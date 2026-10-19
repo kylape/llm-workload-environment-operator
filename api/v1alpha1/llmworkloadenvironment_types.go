@@ -5,7 +5,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const ReadyCondition = "Ready"
+const (
+	ReadyCondition            = "Ready"
+	ArgoCDRegisteredCondition = "ArgoCDRegistered"
+)
 
 type EnvironmentMode string
 
@@ -37,7 +40,13 @@ type LLMWorkloadEnvironmentStatus struct {
 	// Kubeconfig contains the base64-encoded kubeconfig for a ready environment.
 	Kubeconfig []byte `json:"kubeconfig,omitempty"`
 
-	// Conditions contains the aggregate Ready condition.
+	// ArgoCDClusterSecretRef records the registration Secret to reconcile or clean
+	// up, including when the integration is disabled or its namespace changes.
+	// The reference is persisted before Secret creation; use ArgoCDRegistered
+	// to determine whether registration has succeeded.
+	ArgoCDClusterSecretRef *corev1.SecretReference `json:"argoCDClusterSecretRef,omitempty"`
+
+	// Conditions contains environment readiness and Argo CD registration status.
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
