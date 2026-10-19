@@ -87,7 +87,7 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 	// label removal from unregistering an environment.
 	preparationErr := r.prepareArgoCDRegistration(ctx, environment)
 	result, provisionErr := r.reconcileEnvironment(ctx, environment, namespaceName)
-	registrationErr := r.reconcileArgoCDRegistration(ctx, environment, preparationErr)
+	registrationErr := r.reconcileArgoCDRegistration(ctx, environment, preparationErr, provisionErr)
 	if errors.Is(registrationErr, errArgoCDCleanupPending) {
 		if result.RequeueAfter == 0 || result.RequeueAfter > 2*time.Second {
 			result.RequeueAfter = 2 * time.Second
