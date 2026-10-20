@@ -17,10 +17,9 @@ argocd:
 
 kueue:
   admissionEnabled: true
-  # Matches the operator's standalone default. Override for the host policy;
-  # for CKS, use kueue.x-k8s.io/managed: "true".
-  namespaceLabels:
-    kueue.openshift.io/managed: "true"
+  # Set this map to match the host Kueue policy. Empty applies no extra labels;
+  # validation still requires Kueue to select each backing namespace.
+  namespaceLabels: {}
   configRef: kueue-system:kueue-manager-config:controller_manager_config.yaml
 
 crds:
