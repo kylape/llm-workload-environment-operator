@@ -1,0 +1,35 @@
+name: Validate Helm chart
+
+on:
+  pull_request:
+    paths:
+      - charts/**
+      - config/**
+      - tools/**
+      - Makefile
+      - .github/workflows/helm-chart.yaml
+  push:
+    branches: [main]
+    paths:
+      - charts/**
+      - config/**
+      - tools/**
+      - Makefile
+      - .github/workflows/helm-chart.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  helm-chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - run: python3 -m pip install -r tools/requirements-chart.txt
+      - run: make test-chart
