@@ -1,0 +1,2 @@
+{{/* Packaged from config/rbac by tools/sync-chart-manifests.py. */}}
+{{ .Files.Get "files/clusterroles.yaml" }}
