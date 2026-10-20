@@ -1,0 +1,41 @@
+# Empty lets the operator detect OpenShift. Set coreweave explicitly for CKS.
+platform: ""
+
+image:
+  repository: quay.io/klape/llm-workload-environment-operator
+  tag: latest
+  # A nonempty digest takes precedence over tag.
+  digest: sha256:65edeeca54c5407093f5398c2fe7bb5f58c47a300bcb2966053609be84a3e164
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+imagePullSecrets: []
+
+argocd:
+  # Empty disables registration. This chart does not install Argo CD.
+  namespace: ""
+
+kueue:
+  admissionEnabled: true
+  # Matches the operator's standalone default. Override for the host policy;
+  # for CKS, use kueue.x-k8s.io/managed: "true".
+  namespaceLabels:
+    kueue.openshift.io/managed: "true"
+  configRef: kueue-system:kueue-manager-config:controller_manager_config.yaml
+
+crds:
+  # CRDs are rendered as ordinary templates and updated during upgrade/sync.
+  # Retention annotations protect them when disabled or moved elsewhere.
+  create: true
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
