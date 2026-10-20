@@ -1,0 +1,9 @@
+{{- if .Values.crds.create }}
+{{- $crd := .Files.Get "files/llmworkloadenvironments.yaml" | fromYaml }}
+{{- $annotations := $crd.metadata.annotations | default dict }}
+{{- $_ := set $annotations "helm.sh/resource-policy" "keep" }}
+{{- $_ := set $annotations "argocd.argoproj.io/sync-options" "Prune=false,Delete=false" }}
+{{- $_ := set $annotations "argocd.argoproj.io/sync-wave" "-1" }}
+{{- $_ := set $crd.metadata "annotations" $annotations }}
+{{ toYaml $crd }}
+{{- end }}
