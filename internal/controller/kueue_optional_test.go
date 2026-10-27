@@ -164,6 +164,9 @@ func TestDisabledKueueLeavesExistingPolicyUntouched(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := base.Get(context.Background(), client.ObjectKeyFromObject(queue), queue); err != nil {
+		t.Fatal(err)
+	}
 	before := queue.DeepCopy()
 	forbidKueueAccess(t, r)
 	if _, err := r.Reconcile(context.Background(), request); err != nil {
