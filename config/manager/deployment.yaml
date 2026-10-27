@@ -31,9 +31,12 @@ spec:
             # Empty disables registration; recorded registrations are cleaned up.
             - name: ARGOCD_NAMESPACE
               value: ""
-            # Require the backing namespace to match Kueue's Pod namespace selector.
-            # Set false only when the administrator intentionally opts out.
+            # Enable queue checks, LocalQueues, namespace labels, and validation.
+            # Set false to provision environments without a Kueue dependency.
             - name: KUEUE_ADMISSION_ENABLED
+              value: "true"
+            # Validate Kueue Pod integration and namespace selection when enabled.
+            - name: KUEUE_ADMISSION_VALIDATION_ENABLED
               value: "true"
             # JSON map; replaces the default label. For CKS, use
             # {"kueue.x-k8s.io/managed":"true"} when that matches host policy.
