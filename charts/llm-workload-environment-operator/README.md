@@ -6,16 +6,19 @@ cluster: the CRD and ClusterRole names are cluster-wide and are referenced by
 the operator. The release namespace is configurable; the chart does not create
 or manage that Namespace itself.
 
-The default runtime image is pinned by digest. Chart version `0.1.0` packages
+The default runtime image is pinned by digest. Chart version `0.2.0` packages
 the current CRD and RBAC, with runtime image built from operator revision
-`ba2d02c`. The chart does not install Kueue, Argo CD, or workload environments.
+`b29e27c`. The chart does not install Kueue, Argo CD, or workload environments.
 The operator image contains the vCluster chart and pins the vCluster runtime
 with the host Kueue scheduling-gate preservation fix.
 
-The default image above predates the separate validation switch and the full
-Kueue opt-out. Build the updated operator and override `image.digest` before
-deploying these settings; adding environment variables to the old image does
-not implement the new behavior.
+The default image supports both the full Kueue opt-out and the separate admission
+validation switch. Tekton PipelineRun `lwe-optional-kueue-build-mflm9` on Pirate
+built and published `quay.io/klape/llm-workload-environment-operator:git-b29e27c`.
+Its recorded source revision and the registry image revision label both match
+`b29e27cfd3108eabaef9e95d375298946f4c0beb`. The pinned image digest is
+`sha256:60970caa85c294cb1ae37538eabff800435ec172641630289cdd9af99a2f82e3`.
+The previous `ba2d02c` image does not implement the new switch semantics.
 
 ## Installation
 
