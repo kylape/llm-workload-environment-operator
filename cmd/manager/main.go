@@ -96,11 +96,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	var kueueClient environmentcontroller.KueueClient
+	if kueueAdmission.Enabled {
+		kueueClient = environmentcontroller.NewKueueAdapter(manager.GetClient(), discoveryClient)
+	}
 	if err := (&environmentcontroller.LLMWorkloadEnvironmentReconciler{
 		Client:            manager.GetClient(),
 		APIReader:         manager.GetAPIReader(),
 		Scheme:            manager.GetScheme(),
-		Kueue:             environmentcontroller.NewKueueAdapter(manager.GetClient(), discoveryClient),
+		Kueue:             kueueClient,
 		VClusterInstaller: environmentvcluster.HelmInstaller{},
 		Platform:          platform,
 		OpenShift:         openShift,
