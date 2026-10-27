@@ -21,16 +21,18 @@ const kueueNamespaceLabelsAnnotation = "llm.redhat.com/kueue-namespace-labels"
 
 // KueueAdmissionConfig is installation policy, never tenant CR configuration.
 type KueueAdmissionConfig struct {
-	Enabled         bool
-	NamespaceLabels map[string]string
-	ConfigNamespace string
-	ConfigName      string
-	ConfigKey       string
+	Enabled           bool
+	ValidationEnabled bool
+	NamespaceLabels   map[string]string
+	ConfigNamespace   string
+	ConfigName        string
+	ConfigKey         string
 }
 
 func DefaultKueueAdmissionConfig() KueueAdmissionConfig {
 	return KueueAdmissionConfig{
-		Enabled: true, NamespaceLabels: map[string]string{KueueManagedLabel: "true"},
+		Enabled: true, ValidationEnabled: true,
+		NamespaceLabels: map[string]string{KueueManagedLabel: "true"},
 		ConfigNamespace: "kueue-system", ConfigName: "kueue-manager-config",
 		ConfigKey: "controller_manager_config.yaml",
 	}
@@ -45,6 +47,13 @@ func KueueAdmissionConfigFromEnv(getenv func(string) string) (KueueAdmissionConf
 			return c, fmt.Errorf("KUEUE_ADMISSION_ENABLED must be a boolean: %w", err)
 		}
 		c.Enabled = enabled
+	}
+	if value := getenv("KUEUE_ADMISSION_VALIDATION_ENABLED"); value != "" {
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return c, fmt.Errorf("KUEUE_ADMISSION_VALIDATION_ENABLED must be a boolean: %w", err)
+		}
+		c.ValidationEnabled = enabled
 	}
 	if value := getenv("KUEUE_NAMESPACE_LABELS"); value != "" {
 		// Decode into a fresh map: an override replaces the default label.
@@ -102,6 +111,12 @@ func (r *LLMWorkloadEnvironmentReconciler) kueueAdmissionConfig() KueueAdmission
 // applyKueueNamespaceLabels removes only labels last written by this operator,
 // preserving unrelated labels and administrator edits to retired keys.
 func (r *LLMWorkloadEnvironmentReconciler) applyKueueNamespaceLabels(namespace *corev1.Namespace) error {
+	config := r.kueueAdmissionConfig()
+	if !config.Enabled {
+		// Opt-out leaves existing policy metadata untouched, including legacy
+		// records. Do not inspect or migrate it while Kueue is disabled.
+		return nil
+	}
 	previous := map[string]string{}
 	if recorded := namespace.Annotations[kueueNamespaceLabelsAnnotation]; recorded != "" {
 		if err := json.Unmarshal([]byte(recorded), &previous); err != nil {
@@ -111,13 +126,7 @@ func (r *LLMWorkloadEnvironmentReconciler) applyKueueNamespaceLabels(namespace *
 		// Migrate the label used by operator versions predating configurable labels.
 		previous[KueueManagedLabel] = "true"
 	}
-	config := r.kueueAdmissionConfig()
-	desired := map[string]string{}
-	if config.Enabled {
-		for key, value := range config.NamespaceLabels {
-			desired[key] = value
-		}
-	}
+	desired := config.NamespaceLabels
 	if namespace.Labels == nil {
 		namespace.Labels = map[string]string{}
 	}
@@ -190,7 +199,7 @@ func kueuePodNamespaceSelector(data []byte) (labels.Selector, error) {
 
 func (r *LLMWorkloadEnvironmentReconciler) validateKueueAdmission(ctx context.Context, namespaceName string) (string, error) {
 	config := r.kueueAdmissionConfig()
-	if !config.Enabled {
+	if !config.Enabled || !config.ValidationEnabled {
 		return "", nil
 	}
 	// Read live state, including namespace labels just written by reconciliation.
@@ -211,7 +220,7 @@ func (r *LLMWorkloadEnvironmentReconciler) validateKueueAdmission(ctx context.Co
 		return "KueueAdmissionValidationFailed", fmt.Errorf("read backing namespace: %w", err)
 	}
 	if !selector.Matches(labels.Set(namespace.Labels)) {
-		return "KueueNamespaceNotSelected", fmt.Errorf("backing namespace %q does not match Kueue namespace selector %q; configure KUEUE_NAMESPACE_LABELS or explicitly disable with KUEUE_ADMISSION_ENABLED=false", namespaceName, selector.String())
+		return "KueueNamespaceNotSelected", fmt.Errorf("backing namespace %q does not match Kueue namespace selector %q; configure KUEUE_NAMESPACE_LABELS or explicitly disable validation with KUEUE_ADMISSION_VALIDATION_ENABLED=false", namespaceName, selector.String())
 	}
 	return "", nil
 }
