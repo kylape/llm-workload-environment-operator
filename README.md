@@ -10,7 +10,8 @@ namespaced `LLMWorkloadEnvironment` resource. The resource namespace is the
 control boundary: the infra service can manage environments across namespaces, while
 direct users can be limited to a namespace by ordinary Kubernetes RBAC.
 
-Each control (landing) namespace must allow the ClusterQueues its environments
+With Kueue integration enabled (the default), each control (landing) namespace
+must allow the ClusterQueues its environments
 can use. Set the `llm.redhat.com/allowed-cluster-queues` annotation to a
 comma-delimited list on that namespace, for example:
 
@@ -39,7 +40,7 @@ Creating this resource provisions:
 
 * namespace `env-alice-test`;
 * a Kueue `LocalQueue` named `default` that references the platform-owned
-  `inference-workspaces` ClusterQueue.
+  `inference-workspaces` ClusterQueue, when Kueue integration is enabled.
 
 In `Namespace` mode, the operator also creates a dedicated ServiceAccount in
 the backing namespace. Once Kubernetes has populated its token Secret, the operator
@@ -62,14 +63,32 @@ is disabled.
 
 The reusable environment role does not permit its subjects to mutate LocalQueues,
 cluster RBAC, or CRDs. Kueue queue selection remains controlled by the operator.
-The operator checks that the selected ClusterQueue both exists and appears in the
+When Kueue integration is enabled, the operator checks that the selected
+ClusterQueue both exists and appears in the
 landing namespace's allowlist before creating the backing environment namespace.
 An omitted `spec.clusterQueue` resolves to `inference-workspaces`, which must also
 be listed. Rejected requests report the reason in the `Ready` status condition.
 
+## Optional Kueue integration
+
+Both Kueue switches default to `true`:
+
+* `KUEUE_ADMISSION_ENABLED=false` allows environments to provision without
+  Kueue installed. It skips ClusterQueue allowlist/existence checks, LocalQueue
+  creation/readiness checks, Kueue namespace labeling, and admission validation.
+* `KUEUE_ADMISSION_VALIDATION_ENABLED=false` skips only the check that Kueue's
+  Pod integration is configured and selects the backing namespace. Queue checks,
+  LocalQueue reconciliation, and namespace labeling remain enabled.
+
+The main switch takes precedence. Existing queues and Kueue namespace metadata
+are left untouched when integration is disabled. These switches do not disable
+the host's Kueue webhook or its own policies. See
+[Kueue configuration](docs/kueue-admission.md) for configuration and migration
+from the old validation-only meaning of `KUEUE_ADMISSION_ENABLED`.
+
 ## Kueue API compatibility
 
-The operator discovers the Kueue APIs served by the cluster and prefers
+When integration is enabled, the operator discovers the Kueue APIs served by the cluster and prefers
 `kueue.x-k8s.io/v1beta2`, falling back to `v1beta1`. The selected version must
 serve both `ClusterQueue` and `LocalQueue`. Compatibility is based on the
 installed CRDs. Upstream Kueue v0.15 through v0.19 serve both API versions;
