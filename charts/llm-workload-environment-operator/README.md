@@ -12,6 +12,11 @@ the current CRD and RBAC, with runtime image built from operator revision
 The operator image contains the vCluster chart and pins the vCluster runtime
 with the host Kueue scheduling-gate preservation fix.
 
+The default image above predates the separate validation switch and the full
+Kueue opt-out. Build the updated operator and override `image.digest` before
+deploying these settings; adding environment variables to the old image does
+not implement the new behavior.
+
 ## Installation
 
 Choose host-specific values, then install from the LWE repository root:
@@ -47,8 +52,8 @@ kueue:
 ```
 
 Set the labels to match the actual host Kueue Pod namespace selector. The chart
-default is an empty map, which applies no additional namespace labels. Admission
-validation remains enabled and refuses provisioning if Kueue does not select
+default is an empty map, which applies no additional namespace labels. With
+both Kueue switches enabled, admission validation refuses provisioning if Kueue does not select
 the backing namespace. The standalone Kustomize Deployment retains its existing
 OpenShift label default; Helm values deliberately make this choice explicit.
 
@@ -62,7 +67,8 @@ Application is created by adding these examples.
 | --- | --- |
 | `platform` | Empty, `coreweave`, or `openshift`; maps to `PLATFORM` |
 | `argocd.namespace` | Host Argo CD namespace for cluster Secrets; empty disables registration |
-| `kueue.admissionEnabled` | Boolean mapped to `KUEUE_ADMISSION_ENABLED`; defaults to `true` |
+| `kueue.admissionEnabled` | Main integration switch mapped to `KUEUE_ADMISSION_ENABLED`; defaults to `true` |
+| `kueue.admissionValidationEnabled` | Namespace admission check mapped to `KUEUE_ADMISSION_VALIDATION_ENABLED`; defaults to `true` |
 | `kueue.namespaceLabels` | String map serialized to JSON for `KUEUE_NAMESPACE_LABELS` |
 | `kueue.configRef` | `namespace:name:data-key` mapped unchanged to `KUEUE_CONFIG_REF` |
 | `image.repository`, `image.digest`, `image.tag` | Image digest takes precedence over tag; clear digest to use a tag |
@@ -78,8 +84,26 @@ admission switches, unsupported platform names, and misspelled configuration
 keys. The operator performs its existing Kubernetes label and configuration
 validation at runtime.
 
-`kueue.admissionEnabled: false` explicitly disables namespace admission
-validation. It does not remove the operator's ClusterQueue/LocalQueue integration.
+`kueue.admissionEnabled: false` allows both Namespace and VCluster environments
+to provision without Kueue installed. It skips queue authorization, Kueue API
+discovery and resource reads/writes, namespace labeling, and admission validation.
+It takes precedence over `kueue.admissionValidationEnabled`. Existing LocalQueues
+and Kueue namespace metadata are left untouched; host webhook policies remain
+under the cluster administrator's control.
+
+`kueue.admissionValidationEnabled: false` skips only namespace admission
+validation. It keeps ClusterQueue/LocalQueue checks and namespace labeling.
+For an installation that used the previous validation-only meaning of
+`kueue.admissionEnabled: false`, migrate to:
+
+```yaml
+kueue:
+  admissionEnabled: true
+  admissionValidationEnabled: false
+```
+
+Both values default to `true`. See the operator's
+[Kueue configuration documentation](../../docs/kueue-admission.md) for details.
 
 The default Argo CD namespace is empty. To enable registration against an
 existing instance on the host cluster:
