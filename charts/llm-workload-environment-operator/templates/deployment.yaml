@@ -35,6 +35,8 @@ spec:
               value: {{ .Values.argocd.namespace | quote }}
             - name: KUEUE_ADMISSION_ENABLED
               value: {{ .Values.kueue.admissionEnabled | toString | quote }}
+            - name: KUEUE_ADMISSION_VALIDATION_ENABLED
+              value: {{ .Values.kueue.admissionValidationEnabled | toString | quote }}
             - name: KUEUE_NAMESPACE_LABELS
               value: {{ .Values.kueue.namespaceLabels | toJson | quote }}
             - name: KUEUE_CONFIG_REF
