@@ -16,7 +16,10 @@ argocd:
   namespace: ""
 
 kueue:
+  # Main integration switch: false permits provisioning without Kueue installed.
   admissionEnabled: true
+  # Only skips Pod integration/namespace selector validation; queues stay required.
+  admissionValidationEnabled: true
   # Set this map to match the host Kueue policy. Empty applies no extra labels;
   # validation still requires Kueue to select each backing namespace.
   namespaceLabels: {}
