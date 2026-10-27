@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,18 +37,23 @@ func testKueueAdmissionConfigMap() *corev1.ConfigMap {
 
 func TestKueueAdmissionEnvironment(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		env     map[string]string
-		invalid bool
+		name               string
+		env                map[string]string
+		invalid            bool
+		disabled           bool
+		validationDisabled bool
 	}{
 		{name: "defaults"},
 		{name: "custom", env: map[string]string{
 			"KUEUE_NAMESPACE_LABELS": `{"kueue.x-k8s.io/managed":"true","team":"inference"}`,
 			"KUEUE_CONFIG_REF":       "custom-kueue:settings:config.yaml",
 		}},
-		{name: "disabled", env: map[string]string{"KUEUE_ADMISSION_ENABLED": "false"}},
+		{name: "disabled", env: map[string]string{"KUEUE_ADMISSION_ENABLED": "false"}, disabled: true},
+		{name: "validation disabled", env: map[string]string{"KUEUE_ADMISSION_VALIDATION_ENABLED": "false"}, validationDisabled: true},
+		{name: "both disabled", env: map[string]string{"KUEUE_ADMISSION_ENABLED": "false", "KUEUE_ADMISSION_VALIDATION_ENABLED": "false"}, disabled: true, validationDisabled: true},
 		{name: "empty labels", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{}`}},
 		{name: "invalid boolean", env: map[string]string{"KUEUE_ADMISSION_ENABLED": "maybe"}, invalid: true},
+		{name: "invalid validation boolean", env: map[string]string{"KUEUE_ADMISSION_VALIDATION_ENABLED": "maybe"}, invalid: true},
 		{name: "invalid json", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `managed=true`}, invalid: true},
 		{name: "null labels", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `null`}, invalid: true},
 		{name: "non-string labels", env: map[string]string{"KUEUE_NAMESPACE_LABELS": `{"managed":true}`}, invalid: true},
@@ -72,8 +78,8 @@ func TestKueueAdmissionEnvironment(t *testing.T) {
 			if tc.invalid {
 				return
 			}
-			if c.Enabled != (tc.name != "disabled") {
-				t.Fatalf("Enabled=%v", c.Enabled)
+			if c.Enabled != !tc.disabled || c.ValidationEnabled != !tc.validationDisabled {
+				t.Fatalf("Enabled=%v, ValidationEnabled=%v", c.Enabled, c.ValidationEnabled)
 			}
 			if tc.name == "custom" {
 				if len(c.NamespaceLabels) != 2 || c.NamespaceLabels["kueue.x-k8s.io/managed"] != "true" || c.ConfigNamespace != "custom-kueue" || c.ConfigName != "settings" || c.ConfigKey != "config.yaml" {
@@ -146,7 +152,7 @@ managedJobsNamespaceSelector:
 	}
 }
 
-func TestKueueNamespaceLabelMigrationAndDisable(t *testing.T) {
+func TestKueueNamespaceLabelMigrationAndRemoval(t *testing.T) {
 	c := DefaultKueueAdmissionConfig()
 	c.NamespaceLabels = map[string]string{"kueue.x-k8s.io/managed": "true"}
 	r := &LLMWorkloadEnvironmentReconciler{KueueAdmission: &c}
@@ -157,20 +163,20 @@ func TestKueueNamespaceLabelMigrationAndDisable(t *testing.T) {
 	if _, old := ns.Labels[KueueManagedLabel]; old || ns.Labels["kueue.x-k8s.io/managed"] != "true" || ns.Labels["team"] != "demo" {
 		t.Fatalf("migration: %#v", ns.Labels)
 	}
-	c.Enabled = false
+	c.NamespaceLabels = map[string]string{}
 	if err := r.applyKueueNamespaceLabels(ns); err != nil {
 		t.Fatal(err)
 	}
 	if len(ns.Labels) != 1 || ns.Labels["team"] != "demo" {
-		t.Fatalf("disable: %#v", ns.Labels)
+		t.Fatalf("removal: %#v", ns.Labels)
 	}
 	// A retired key edited by an administrator must not be deleted.
-	c.Enabled = true
+	c.NamespaceLabels = map[string]string{"kueue.x-k8s.io/managed": "true"}
 	if err := r.applyKueueNamespaceLabels(ns); err != nil {
 		t.Fatal(err)
 	}
 	ns.Labels["kueue.x-k8s.io/managed"] = "admin-value"
-	c.Enabled = false
+	c.NamespaceLabels = map[string]string{}
 	if err := r.applyKueueNamespaceLabels(ns); err != nil {
 		t.Fatal(err)
 	}
@@ -180,6 +186,33 @@ func TestKueueNamespaceLabelMigrationAndDisable(t *testing.T) {
 	ns.Annotations[kueueNamespaceLabelsAnnotation] = `{"llm.redhat.com/environment":"example"}`
 	if err := r.applyKueueNamespaceLabels(ns); err == nil {
 		t.Fatal("reserved labels in migration record were accepted")
+	}
+}
+
+func TestKueueNamespaceLabelsRespectIntegrationSwitch(t *testing.T) {
+	config := DefaultKueueAdmissionConfig()
+	config.Enabled = false
+	r := &LLMWorkloadEnvironmentReconciler{KueueAdmission: &config}
+	for _, ns := range []*corev1.Namespace{
+		{ObjectMeta: metav1.ObjectMeta{Name: "new-namespace"}},
+		{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{KueueManagedLabel: "true"}, Annotations: map[string]string{kueueNamespaceLabelsAnnotation: "invalid-record"}}},
+	} {
+		before := ns.DeepCopy()
+		if err := r.applyKueueNamespaceLabels(ns); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(ns, before) {
+			t.Fatalf("disabled integration changed namespace: %#v", ns)
+		}
+	}
+	config.Enabled = true
+	config.ValidationEnabled = false
+	ns := &corev1.Namespace{}
+	if err := r.applyKueueNamespaceLabels(ns); err != nil {
+		t.Fatal(err)
+	}
+	if ns.Labels[KueueManagedLabel] != "true" {
+		t.Fatal("disabling validation must not disable namespace labels")
 	}
 }
 
@@ -219,9 +252,11 @@ func TestKueueAdmissionReadFailuresAndDisabled(t *testing.T) {
 		if reason, err := r.validateKueueAdmission(ctx, "env-example"); reason != "KueueAdmissionValidationFailed" || err == nil {
 			t.Fatalf("missing/forbidden must fail closed: %s %v", reason, err)
 		}
-		r.KueueAdmission = &KueueAdmissionConfig{Enabled: false}
+		config := DefaultKueueAdmissionConfig()
+		config.ValidationEnabled = false
+		r.KueueAdmission = &config
 		if reason, err := r.validateKueueAdmission(ctx, "env-example"); reason != "" || err != nil {
-			t.Fatalf("disabled integration performed reads: %s %v", reason, err)
+			t.Fatalf("disabled validation performed reads: %s %v", reason, err)
 		}
 	}
 }
@@ -273,7 +308,7 @@ func TestReconcileKueueAdmissionMismatchRecoveryAndDrift(t *testing.T) {
 		t.Fatalf("drift ignored: %#v", ready)
 	}
 	// Explicit administrator opt-out restores readiness without reading config.
-	config.Enabled = false
+	config.ValidationEnabled = false
 	if err := r.Delete(ctx, cm); err != nil {
 		t.Fatal(err)
 	}
