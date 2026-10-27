@@ -96,11 +96,15 @@
       "additionalProperties": false,
       "required": [
         "admissionEnabled",
+        "admissionValidationEnabled",
         "namespaceLabels",
         "configRef"
       ],
       "properties": {
         "admissionEnabled": {
+          "type": "boolean"
+        },
+        "admissionValidationEnabled": {
           "type": "boolean"
         },
         "namespaceLabels": {
