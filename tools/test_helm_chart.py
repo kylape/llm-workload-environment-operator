@@ -44,18 +44,20 @@ class HelmChartTests(unittest.TestCase):
     def test_flavor_configuration_and_boolean_serialization(self):
         for platform, label in (("coreweave", "kueue.x-k8s.io/managed"),
                                 ("openshift", "kueue.openshift.io/managed")):
-            for admission in (True, False):
-                with self.subTest(platform=platform, admission=admission):
+            for admission, validation in ((True, True), (True, False), (False, True), (False, False)):
+                with self.subTest(platform=platform, admission=admission, validation=validation):
                     labels = {label: "true", "team": "inference"}
                     values = {"platform": platform,
                               "argocd": {"namespace": "guest-registration"},
-                              "kueue": {"admissionEnabled": admission, "namespaceLabels": labels,
+                              "kueue": {"admissionEnabled": admission, "admissionValidationEnabled": validation,
+                                        "namespaceLabels": labels,
                                         "configRef": "queue-system:custom-config:settings.yaml"}}
                     env = environment(resources(values))
                     self.assertTrue(all(isinstance(value, str) for value in env.values()))
                     self.assertEqual(env["PLATFORM"], platform)
                     self.assertEqual(env["ARGOCD_NAMESPACE"], "guest-registration")
                     self.assertEqual(env["KUEUE_ADMISSION_ENABLED"], str(admission).lower())
+                    self.assertEqual(env["KUEUE_ADMISSION_VALIDATION_ENABLED"], str(validation).lower())
                     self.assertEqual(json.loads(env["KUEUE_NAMESPACE_LABELS"]), labels)
                     self.assertEqual(env["KUEUE_CONFIG_REF"], "queue-system:custom-config:settings.yaml")
 
@@ -65,6 +67,7 @@ class HelmChartTests(unittest.TestCase):
         self.assertEqual(env["PLATFORM"], "")
         self.assertEqual(env["ARGOCD_NAMESPACE"], "")
         self.assertEqual(env["KUEUE_ADMISSION_ENABLED"], "true")
+        self.assertEqual(env["KUEUE_ADMISSION_VALIDATION_ENABLED"], "true")
         self.assertEqual(json.loads(env["KUEUE_NAMESPACE_LABELS"]), {})
         source = yaml.safe_load((ROOT / "config/manager/deployment.yaml").read_text())
         pod = deployment(objects)["spec"]["template"]["spec"]
@@ -134,6 +137,7 @@ class HelmChartTests(unittest.TestCase):
             {"platform": "eks"},
             {"argocd": {"namespace": "Bad_Namespace"}},
             {"kueue": {"admissionEnabled": "false"}},
+            {"kueue": {"admissionValidationEnabled": "false"}},
             {"kueue": {"namespaceLabels": {"managed": True}}},
             {"kueue": {"namespaceLabels": {"llm.redhat.com/environment": "other"}}},
             {"kueue": {"configRef": "namespace:name"}},
