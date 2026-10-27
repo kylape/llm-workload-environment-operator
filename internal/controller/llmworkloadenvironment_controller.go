@@ -185,7 +185,7 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 	if err := r.setReady(ctx, environment, namespaceName, kubeconfig, metav1.ConditionTrue, "Ready", "Environment is ready"); err != nil {
 		return ctrl.Result{}, err
 	}
-	if r.kueueAdmissionConfig().Enabled {
+	if config := r.kueueAdmissionConfig(); config.Enabled && config.ValidationEnabled {
 		// Revalidate configuration drift even when no Argo CD profile is present.
 		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
@@ -452,6 +452,9 @@ func (r *LLMWorkloadEnvironmentReconciler) clusterAPIServerURL(ctx context.Conte
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) ensureClusterQueueExists(ctx context.Context, environment *environmentv1alpha1.LLMWorkloadEnvironment) error {
+	if !r.kueueAdmissionConfig().Enabled {
+		return nil
+	}
 	if r.Kueue == nil {
 		return fmt.Errorf("%w: Kueue client is not configured", ErrKueueAPIUnavailable)
 	}
@@ -462,6 +465,9 @@ func (r *LLMWorkloadEnvironmentReconciler) validateClusterQueue(
 	ctx context.Context,
 	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 ) (string, string, error) {
+	if !r.kueueAdmissionConfig().Enabled {
+		return "", "", nil
+	}
 	landingNamespace := &corev1.Namespace{}
 	if err := r.Get(ctx, types.NamespacedName{Name: environment.Namespace}, landingNamespace); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -506,6 +512,9 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureLocalQueue(
 	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespace string,
 ) (bool, error) {
+	if !r.kueueAdmissionConfig().Enabled {
+		return true, nil
+	}
 	if r.Kueue == nil {
 		return false, fmt.Errorf("%w: Kueue client is not configured", ErrKueueAPIUnavailable)
 	}
