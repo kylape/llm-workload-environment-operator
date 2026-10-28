@@ -159,7 +159,16 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 	}
 
 	var kubeconfig []byte
-	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeSNO {
+		observation, err := r.ensureSNO(ctx, environment, namespaceName)
+		if err != nil {
+			return r.notReady(ctx, environment, namespaceName, "SNOReconciliationFailed", err.Error(), 5*time.Second, err)
+		}
+		if !observation.Ready {
+			return r.notReady(ctx, environment, namespaceName, observation.Reason, observation.Message, 5*time.Second, nil)
+		}
+		kubeconfig = observation.Kubeconfig
+	} else if environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
 		config, ready, err := r.ensureVCluster(ctx, environment, namespaceName)
 		if err != nil {
 			if errors.Is(err, ErrVClusterPlatformNotConfigured) {
@@ -184,6 +193,11 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 
 	if err := r.setReady(ctx, environment, namespaceName, kubeconfig, metav1.ConditionTrue, "Ready", "Environment is ready"); err != nil {
 		return ctrl.Result{}, err
+	}
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeSNO {
+		// The provider is optional; polling avoids a startup watch dependency on
+		// its CRD and continues to observe readiness and access-secret changes.
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	if config := r.kueueAdmissionConfig(); config.Enabled && config.ValidationEnabled {
 		// Revalidate configuration drift even when no Argo CD profile is present.
@@ -249,10 +263,14 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespace(
 }
 
 func environmentNamespaceLabels(environment *environmentv1alpha1.LLMWorkloadEnvironment) map[string]string {
-	return map[string]string{
+	labels := map[string]string{
 		"app.kubernetes.io/managed-by": "llm-workload-environment-operator",
 		"llm.redhat.com/environment":   environment.Name,
 	}
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeSNO {
+		labels["sno.klape.io/enabled"] = "true"
+	}
+	return labels
 }
 
 func environmentOwnershipAnnotations(environment *environmentv1alpha1.LLMWorkloadEnvironment) map[string]string {
@@ -705,6 +723,15 @@ func (r *LLMWorkloadEnvironmentReconciler) finalize(
 
 	if err := r.removeLegacyKubeconfigSecret(ctx, environment); err != nil {
 		return ctrl.Result{}, err
+	}
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeSNO {
+		done, err := r.finalizeSNO(ctx, environment, namespaceName)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !done {
+			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		}
 	}
 
 	binding := &rbacv1.ClusterRoleBinding{}
