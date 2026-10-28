@@ -56,6 +56,9 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, enviro
 		return snoObservation{Reason: "SNOProviderNotAvailable", Message: "Install the SNO VM operator and its SNOVirtualMachine API"}, nil
 	}
 	if apierrors.IsNotFound(err) {
+		if ref := environment.Status.SNOVirtualMachineRef; ref != nil && ref.UID != "" {
+			return snoObservation{Reason: "SNORequestMissing", Message: "Established SNO request is missing; recreate the environment explicitly"}, nil
+		}
 		request.Object["spec"] = map[string]interface{}{
 			"imageProfile":            snoImageProfile(environment),
 			"rootDiskRetentionPolicy": "Delete",
@@ -75,6 +78,9 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, enviro
 	}
 	if !environmentOwns(request, environment) {
 		return waiting, fmt.Errorf("SNO request collision in backing namespace")
+	}
+	if ref := environment.Status.SNOVirtualMachineRef; ref != nil && ref.UID != "" && ref.UID != request.GetUID() {
+		return waiting, fmt.Errorf("established SNO request identity has changed")
 	}
 	profile, _, _ := unstructured.NestedString(request.Object, "spec", "imageProfile")
 	retention, _, _ := unstructured.NestedString(request.Object, "spec", "rootDiskRetentionPolicy")
@@ -181,6 +187,13 @@ func (r *LLMWorkloadEnvironmentReconciler) finalizeSNO(ctx context.Context, envi
 	}
 	if !environmentOwns(request, environment) {
 		return false, fmt.Errorf("refusing to remove a SNO request not owned by this environment")
+	}
+	if ref := environment.Status.SNOVirtualMachineRef; ref != nil && ref.UID != "" && ref.UID != request.GetUID() {
+		return false, fmt.Errorf("refusing to remove a replacement SNO request")
+	}
+	retention, _, _ := unstructured.NestedString(request.Object, "spec", "rootDiskRetentionPolicy")
+	if retention != "Delete" {
+		return false, fmt.Errorf("SNO disk retention requires administrator review before namespace cleanup")
 	}
 	if request.GetDeletionTimestamp() == nil {
 		uid := request.GetUID()
