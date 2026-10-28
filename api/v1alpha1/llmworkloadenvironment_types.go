@@ -15,14 +15,28 @@ type EnvironmentMode string
 const (
 	EnvironmentModeNamespace EnvironmentMode = "Namespace"
 	EnvironmentModeVCluster  EnvironmentMode = "VCluster"
+	EnvironmentModeSNO       EnvironmentMode = "SNO"
 )
 
+type SNOEnvironmentSpec struct {
+	// ImageProfile selects a qualified preinstalled image in the SNO operator.
+	// +kubebuilder:default=default
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	ImageProfile string `json:"imageProfile,omitempty"`
+}
+
+// +kubebuilder:validation:XValidation:rule="self.mode != 'SNO' || (!has(self.sno) && !has(oldSelf.sno)) || (has(self.sno) && has(oldSelf.sno) && self.sno == oldSelf.sno)",message="SNO options are immutable"
 type LLMWorkloadEnvironmentSpec struct {
-	// Mode selects a direct host namespace or an isolated vCluster.
+	// Mode selects a host namespace, vCluster, or preinstalled SNO VM.
 	// +kubebuilder:default=Namespace
-	// +kubebuilder:validation:Enum=Namespace;VCluster
+	// +kubebuilder:validation:Enum=Namespace;VCluster;SNO
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="mode is immutable"
 	Mode EnvironmentMode `json:"mode,omitempty"`
+
+	// SNO contains provider options used only in SNO mode.
+	// +optional
+	SNO *SNOEnvironmentSpec `json:"sno,omitempty"`
 
 	// ClusterQueue is the Kueue ClusterQueue that backs the environment's
 	// default LocalQueue.
@@ -36,6 +50,10 @@ type LLMWorkloadEnvironmentSpec struct {
 type LLMWorkloadEnvironmentStatus struct {
 	// NamespaceRef identifies the backing host-cluster namespace.
 	NamespaceRef *corev1.LocalObjectReference `json:"namespaceRef,omitempty"`
+
+	// SNOVirtualMachineRef identifies the request managed by the SNO operator.
+	// It is separate from the generated VM, whose lifecycle belongs to that provider.
+	SNOVirtualMachineRef *corev1.ObjectReference `json:"snoVirtualMachineRef,omitempty"`
 
 	// Kubeconfig contains the base64-encoded kubeconfig for a ready environment.
 	Kubeconfig []byte `json:"kubeconfig,omitempty"`
