@@ -212,3 +212,78 @@ func TestSNOFinalizationWaitsBeforeNamespaceDeletion(t *testing.T) {
 		t.Fatal("namespace was not deleted after provider cleanup", err)
 	}
 }
+
+type missingSNOAPI struct{ client.Client }
+
+func (c missingSNOAPI) Get(ctx context.Context, key client.ObjectKey, object client.Object, options ...client.GetOption) error {
+	if object.GetObjectKind().GroupVersionKind() == snoGVK {
+		return &apimeta.NoKindMatchError{GroupKind: snoGVK.GroupKind(), SearchedVersions: []string{snoGVK.Version}}
+	}
+	return c.Client.Get(ctx, key, object, options...)
+}
+
+func TestMissingSNOProviderDoesNotFallBackToNamespaceCredentials(t *testing.T) {
+	r, _, request := snoFixture(t)
+	r.Client = missingSNOAPI{r.Client}
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	current := &environmentv1alpha1.LLMWorkloadEnvironment{}
+	if err := r.Get(context.Background(), request.NamespacedName, current); err != nil {
+		t.Fatal(err)
+	}
+	condition := apimeta.FindStatusCondition(current.Status.Conditions, environmentv1alpha1.ReadyCondition)
+	if condition == nil || condition.Reason != "SNOProviderNotAvailable" || len(current.Status.Kubeconfig) != 0 {
+		t.Fatal("missing provider did not remain explicitly unavailable")
+	}
+}
+
+func TestDeletedEstablishedSNOIsNotSilentlyRecreated(t *testing.T) {
+	r, e, request := snoFixture(t)
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	child := newSNO(NamespacePrefix + e.Name)
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(child), child); err != nil {
+		t.Fatal(err)
+	}
+	child.SetUID(types.UID("established-provider-uid"))
+	if err := r.Update(context.Background(), child); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Delete(context.Background(), child); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(child), newSNO(child.GetNamespace())); !apierrors.IsNotFound(err) {
+		t.Fatal("established cluster identity was replaced", err)
+	}
+}
+
+func TestSNORetentionDriftBlocksNamespaceCleanup(t *testing.T) {
+	r, e, request := snoFixture(t)
+	if _, err := r.Reconcile(context.Background(), request); err != nil {
+		t.Fatal(err)
+	}
+	child := newSNO(NamespacePrefix + e.Name)
+	if err := r.Get(context.Background(), client.ObjectKeyFromObject(child), child); err != nil {
+		t.Fatal(err)
+	}
+	if err := unstructured.SetNestedField(child.Object, "Retain", "spec", "rootDiskRetentionPolicy"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Update(context.Background(), child); err != nil {
+		t.Fatal(err)
+	}
+	if done, err := r.finalizeSNO(context.Background(), e, child.GetNamespace()); done || err == nil {
+		t.Fatal("retained storage was not protected")
+	}
+	if err := r.Get(context.Background(), client.ObjectKey{Name: child.GetNamespace()}, &corev1.Namespace{}); err != nil {
+		t.Fatal("retained namespace removed", err)
+	}
+}
