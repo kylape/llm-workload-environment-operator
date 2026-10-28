@@ -1,10 +1,17 @@
-.PHONY: build test generate-chart test-chart
+.PHONY: build test generate-chart test-chart test-api
 
 build:
 	GOMAXPROCS=2 GOFLAGS=-p=1 CGO_ENABLED=0 go build -o bin/manager ./cmd/manager
 
 test:
 	GOMAXPROCS=2 GOFLAGS=-p=1 go test ./...
+
+bin/envtest-1.35.0/etcd:
+	python3 -B tools/fetch-envtest.py --destination bin/envtest-1.35.0
+
+# An isolated local apiserver checks CEL/defaulting without using a kubeconfig.
+test-api: bin/envtest-1.35.0/etcd
+	KUBEBUILDER_ASSETS="$(CURDIR)/bin/envtest-1.35.0" GOMAXPROCS=2 GOFLAGS=-p=1 go test ./api/... -count=1
 
 # Refresh packaged CRD/RBAC after changing their canonical config/ manifests.
 generate-chart:
