@@ -186,3 +186,11 @@ rules:
       - patch
       - update
       - watch
+  - apiGroups:
+      - sno.klape.io
+    resources:
+      - snovirtualmachines
+    verbs:
+      - get
+      - create
+      - delete

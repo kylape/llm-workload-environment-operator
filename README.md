@@ -5,8 +5,8 @@ for LLM development, serving, and performance testing. It provides a declarative
 boundary between clients such as `infra` or a future UI and cluster services
 such as Kueue and vCluster.
 
-The operator provisions either a host-cluster namespace or a vCluster for each
-namespaced `LLMWorkloadEnvironment` resource. The resource namespace is the
+The operator provisions a host-cluster namespace, a vCluster, or an independent
+SNO VM for each namespaced `LLMWorkloadEnvironment` resource. The resource namespace is the
 control boundary: the infra service can manage environments across namespaces, while
 direct users can be limited to a namespace by ordinary Kubernetes RBAC.
 
@@ -68,6 +68,16 @@ ClusterQueue both exists and appears in the
 landing namespace's allowlist before creating the backing environment namespace.
 An omitted `spec.clusterQueue` resolves to `inference-workspaces`, which must also
 be listed. Rejected requests report the reason in the `Ready` status condition.
+
+## SNO environments
+
+On OpenShift, `mode: SNO` delegates VM, seed-image, identity, and API readiness
+management to the separate [SNO VM operator](https://github.com/kylape/sno-vm-operator).
+See [the SNO workflow](docs/sno-mode.md) and the
+[sample request](config/samples/llm_v1alpha1_llmworkloadenvironment_sno.yaml).
+The provider and a qualified seed image must be available before provisioning;
+the adapter is implemented, but the complete seed/clone flow is still undergoing
+qualification. A missing provider leaves the environment not ready.
 
 ## Optional Kueue integration
 
