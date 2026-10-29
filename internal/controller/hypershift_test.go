@@ -141,8 +141,8 @@ func TestHyperShiftLifecycle(t *testing.T) {
 	// Scaling must withdraw readiness before the new worker is observed.
 	two := int32(2)
 	e.Spec.HyperShift = &envapi.HyperShiftEnvironmentSpec{Replicas: &two}
-	if data, ready, err := r.ensureHyperShift(ctx, e, "env-test"); err != nil || ready || len(data) != 0 {
-		t.Fatalf("scaling retained stale readiness: %v %v", ready, err)
+	if data, ready, err := r.ensureHyperShift(ctx, e, "env-test"); err != nil || ready || len(data) == 0 {
+		t.Fatalf("scaling must retain healthy API access while withdrawing readiness: %v %v", ready, err)
 	}
 	if _, ready, err := r.ensureHyperShift(ctx, e, "env-test"); err != nil || ready {
 		t.Fatalf("old status accepted after scaling: %v %v", ready, err)
