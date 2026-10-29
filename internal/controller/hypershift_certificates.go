@@ -90,6 +90,19 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShiftManagedObject(ctx con
 	actual := hyperShiftObject(desired.GroupVersionKind(), desired.GetNamespace(), desired.GetName())
 	err := r.hyperShiftReader().Get(ctx, client.ObjectKeyFromObject(actual), actual)
 	if apierrors.IsNotFound(err) {
+		// cert-manager can populate an existing target Secret. Refuse a foreign
+		// Secret before creating a Certificate that could overwrite it.
+		if desired.GroupVersionKind() == certificateGVK {
+			secretName, _, _ := unstructured.NestedString(desired.Object, "spec", "secretName")
+			secret := &corev1.Secret{}
+			if err := r.hyperShiftReader().Get(ctx, types.NamespacedName{Namespace: desired.GetNamespace(), Name: secretName}, secret); err == nil {
+				if !environmentOwns(secret, e) || secret.Annotations["cert-manager.io/certificate-name"] != desired.GetName() {
+					return nil, fmt.Errorf("refusing to issue a certificate into foreign Secret %s", secretName)
+				}
+			} else if !apierrors.IsNotFound(err) {
+				return nil, err
+			}
+		}
 		if err := r.Create(ctx, desired); err != nil {
 			return nil, err
 		}
