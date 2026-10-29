@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	envapi "github.com/kylape/llm-workload-environment-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -121,4 +122,35 @@ func probeHyperShiftAPI(ctx context.Context, data []byte, replicas int32) error 
 		return fmt.Errorf("hosted worker nodes are not ready")
 	}
 	return nil
+}
+
+// Keep HyperShift-issued client credentials and use cert-manager's stable CA
+// for the extra ingress endpoint. The native kubeconfig remains a worker
+// NodePort kubeconfig; publishing its original port at ingress would fail.
+func (r *LLMWorkloadEnvironmentReconciler) hyperShiftIngressKubeconfig(ctx context.Context, e *envapi.LLMWorkloadEnvironment, hc *unstructured.Unstructured, p HyperShiftProfile, data []byte) ([]byte, error) {
+	host := hyperShiftAPIHost(e, p)
+	secret, ready, err := r.hyperShiftCertificateSecret(ctx, e, hc.GetNamespace(), hyperShiftAPISecret, host, false)
+	if err != nil {
+		return nil, err
+	}
+	if !ready {
+		return nil, fmt.Errorf("hosted API certificate Secret is not ready")
+	}
+	c, err := clientcmd.Load(data)
+	if err != nil {
+		return nil, fmt.Errorf("invalid portable hosted administrator kubeconfig")
+	}
+	context := c.Contexts[c.CurrentContext]
+	if context == nil || c.Clusters[context.Cluster] == nil {
+		return nil, fmt.Errorf("portable hosted kubeconfig has no current cluster")
+	}
+	cluster := c.Clusters[context.Cluster]
+	cluster.Server = "https://" + host + ":443"
+	cluster.CertificateAuthorityData = secret.Data["ca.crt"]
+	cluster.TLSServerName = ""
+	rewritten, err := clientcmd.Write(*c)
+	if err != nil {
+		return nil, err
+	}
+	return portableHyperShiftKubeconfig(rewritten, host, 443)
 }
