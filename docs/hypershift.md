@@ -349,3 +349,26 @@ NodePool, worker VM, both backing namespaces, API Route, cert-manager
 Certificates/Issuers/Secrets, and the 8Gi etcd and 258Gi worker PVs were all
 verified gone. The existing `ai-grid-hub` stayed Ready; no provider or namespace
 finalizers were removed manually.
+
+## Early API access validation: 2026-10-29
+
+Tekton PipelineRun `lwe-early-api-build-s7gmj` tested and built source
+`cf7ac84d90e7c26189a906722dac1868ba5edc63`. The public controller image is
+`quay.io/klape/llm-workload-environment-operator@sha256:5df093dd5a216ed5ab6184a296b4e32836e7d88d836945f4dec2e1dad8f70e26`.
+Go race tests, vet, Helm checks and chart CI passed. Tests verify early access
+with zero nodes, API failure withdrawal and recovery, full readiness remaining
+false until installation and workers are ready, and credential-owner mismatch.
+
+The new controller acquired leadership before this test request was submitted.
+Fresh request `lwe-early-api-test/lwe-early-proof` was created at 19:36:44 UTC.
+At **19:38:23 UTC**, LWE published its verified shared-ingress kubeconfig and
+set **APIAccessible=True while Ready=False**: **1 minute 39 seconds** from the
+request, with zero worker nodes registered.
+
+Using that exact published kubeconfig with TLS verification enabled, a client
+successfully applied a Namespace and Deployment through the port-443 API Route.
+A second node listing still showed no nodes. The Deployment had zero available
+replicas and its Pod was Pending, demonstrating that resources can be submitted
+before worker capacity becomes available. The existing `ai-grid-hub` retained
+full readiness and also received the APIAccessible condition. These observations
+are from one shared-host run with existing image caches, not a startup SLA.
