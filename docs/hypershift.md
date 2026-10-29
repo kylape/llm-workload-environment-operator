@@ -89,10 +89,15 @@ the generated control-plane namespace fits Kubernetes naming limits.
 
 ```bash
 kubectl wait llmworkloadenvironment/my-openshift -n workload-requests \
-  --for=condition=Ready --timeout=15m
+  --for=condition=APIAccessible --timeout=10m
 umask 077
 kubectl get llmworkloadenvironment my-openshift -n workload-requests \
-  -o jsonpath='{.status.kubeconfig}' | base64 --decode > guest.kubeconfig
+  -o jsonpath='{.status.kubeconfig}' > guest.kubeconfig.b64
+base64 --decode guest.kubeconfig.b64 > guest.kubeconfig
+kubectl apply -f application.yaml --kubeconfig guest.kubeconfig
+# Wait separately when the client needs Ready workers and full installation.
+kubectl wait llmworkloadenvironment/my-openshift -n workload-requests \
+  --for=condition=Ready --timeout=15m
 kubectl get nodes --kubeconfig guest.kubeconfig
 kubectl patch llmworkloadenvironment my-openshift -n workload-requests \
   --type=merge -p '{"spec":{"hypershift":{"replicas":2}}}'
@@ -102,9 +107,18 @@ kubectl delete llmworkloadenvironment my-openshift -n workload-requests
 `status.kubeconfig` grants guest cluster administrator access. Restrict read
 access to LWE resources accordingly. LWE publishes only the provider's current
 context, with embedded CA and credentials, after verifying the API endpoint,
-TLS trust, authenticated API access and the requested number of Ready workers.
+TLS trust and authenticated API access. `APIAccessible=True` and the kubeconfig
+can appear while there are zero workers or installation is still progressing.
+Clients can apply available resource types immediately; Pods remain Pending
+until capacity is ready, and APIs supplied by operators might not exist yet.
+`Ready=True` separately requires current provider readiness, full OpenShift
+installation availability and the requested number of Ready workers.
+
 It rejects credential plugins, external credential files and host credentials.
-Status credentials are withdrawn while the environment is unavailable or scales.
+Healthy API credentials remain published during worker startup and scaling.
+API probe failure, invalid credentials, ownership/policy violations, or missing
+endpoint/certificate prerequisites withdraw the kubeconfig and set
+`APIAccessible=False`. Argo CD registration still waits for `Ready=True`.
 
 The controller creates `HostedCluster/cluster` and `NodePool/workers` in
 `env-my-openshift`. HyperShift creates the separate
@@ -270,6 +284,8 @@ Changing the LWE worker count from one to two completed in approximately
 4 minutes 30 seconds. Readiness and published credentials were withdrawn at
 the new request generation, then restored once both workers were Ready. The
 application remained available during scale-out and after it completed.
+The current implementation preserves healthy API credentials during scaling;
+the credential withdrawal above describes the original validation run.
 
 Deleting the LWE completed provider cleanup in approximately 4 minutes 30
 seconds, including both VMs, the HostedCluster, NodePool, control-plane namespace,
@@ -325,7 +341,8 @@ earlier; monitoring/Prometheus completed last. This run included forced
 certificate renewal and did not clear image caches; it is a functional test,
 not a provisioning benchmark. LWE deliberately gates credential publication on
 full OpenShift installation availability as well as authenticated API access
-and Ready workers.
+and Ready workers. The current implementation publishes verified credentials
+earlier, with `APIAccessible=True` independently of full readiness.
 
 Deleting the test LWE completed normal provider cleanup. The HostedCluster,
 NodePool, worker VM, both backing namespaces, API Route, cert-manager
