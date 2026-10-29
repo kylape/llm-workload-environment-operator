@@ -88,6 +88,11 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 			return nil, false, fmt.Errorf("administrator profile changed; restore it or create an environment with a new profile")
 		}
 	}
+	if p.APIServerPublishingStrategy == "SharedIngress" {
+		if ready, err := r.ensureHyperShiftCertificate(ctx, e, namespace, p); err != nil || !ready {
+			return nil, false, err
+		}
+	}
 	if err := r.ensureHyperShiftCredentials(ctx, e, namespace, p, apierrors.IsNotFound(err)); err != nil {
 		return nil, false, err
 	}
@@ -146,6 +151,11 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if err := r.recordHyperShiftReference(ctx, e, np); err != nil {
 		return nil, false, err
 	}
+	if p.APIServerPublishingStrategy == "SharedIngress" {
+		if ready, err := r.ensureHyperShiftAPIRoute(ctx, e, hc, p); err != nil || !ready {
+			return nil, false, err
+		}
+	}
 	if np.GetDeletionTimestamp() != nil || !hyperShiftCondition(hc, "Available") || !hyperShiftCondition(hc, "ClusterVersionAvailable") || !hyperShiftCondition(np, "Ready") || !hyperShiftCondition(np, "AllNodesHealthy") {
 		return nil, false, nil
 	}
@@ -156,6 +166,12 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	config, err := r.hyperShiftKubeconfig(ctx, hc)
 	if err != nil {
 		return nil, false, err
+	}
+	if p.APIServerPublishingStrategy == "SharedIngress" {
+		config, err = r.hyperShiftIngressKubeconfig(ctx, e, hc, p, config)
+		if err != nil {
+			return nil, false, err
+		}
 	}
 	if err := probeHyperShiftAPI(ctx, config, replicas); err != nil {
 		return nil, false, nil
@@ -266,6 +282,13 @@ func hyperShiftResources(e *envapi.LLMWorkloadEnvironment, namespace string, p H
 			"type": "Route", "route": map[string]interface{}{"hostname": fmt.Sprintf("api-lwe-%x.%s", id[:6], p.BaseDomain)},
 		}
 		_ = unstructured.SetNestedSlice(hc.Object, services, "spec", "services")
+	}
+	if p.APIServerPublishingStrategy == "SharedIngress" {
+		host := hyperShiftAPIHost(e, p)
+		_ = unstructured.SetNestedField(hc.Object, host, "spec", "kubeAPIServerDNSName")
+		_ = unstructured.SetNestedSlice(hc.Object, []interface{}{map[string]interface{}{
+			"names": []interface{}{host}, "servingCertificate": map[string]interface{}{"name": hyperShiftAPISecret},
+		}}, "spec", "configuration", "apiServer", "servingCerts", "namedCertificates")
 	}
 	np := hyperShiftObject(nodePoolGVK, namespace, "workers")
 	np.SetAnnotations(environmentOwnershipAnnotations(e))
