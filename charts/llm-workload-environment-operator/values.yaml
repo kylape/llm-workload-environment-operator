@@ -3,9 +3,9 @@ platform: ""
 
 image:
   repository: quay.io/klape/llm-workload-environment-operator
-  tag: git-73e8093
+  tag: git-cf7ac84
   # A nonempty digest takes precedence over tag.
-  digest: sha256:664374ddb6b2aa080dc0d59b21e61fa6da875ada06de77294de7594a95b55756
+  digest: sha256:5df093dd5a216ed5ab6184a296b4e32836e7d88d836945f4dec2e1dad8f70e26
   pullPolicy: IfNotPresent
 
 replicaCount: 1
