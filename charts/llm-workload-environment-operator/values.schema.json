@@ -13,7 +13,8 @@
     "imagePullSecrets",
     "nodeSelector",
     "tolerations",
-    "affinity"
+    "affinity",
+    "hypershift"
   ],
   "properties": {
     "platform": {
@@ -164,6 +165,152 @@
     },
     "affinity": {
       "type": "object"
+    },
+    "hypershift": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "profiles"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "profiles": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+            "maxLength": 63
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "releaseImage",
+              "pullSecret",
+              "baseDomain",
+              "apiServerAddress",
+              "etcdStorageClass",
+              "workerStorageClass"
+            ],
+            "properties": {
+              "releaseImage": {
+                "type": "string",
+                "pattern": "^[^\\s@]+@sha256:[a-f0-9]{64}$"
+              },
+              "baseDomain": {
+                "type": "string",
+                "minLength": 1
+              },
+              "apiServerAddress": {
+                "type": "string",
+                "minLength": 1
+              },
+              "etcdStorageClass": {
+                "type": "string",
+                "minLength": 1
+              },
+              "workerStorageClass": {
+                "type": "string",
+                "minLength": 1
+              },
+              "etcdStorageSize": {
+                "type": "string",
+                "minLength": 1
+              },
+              "workerMemory": {
+                "type": "string",
+                "minLength": 1
+              },
+              "workerRootDisk": {
+                "type": "string",
+                "minLength": 1
+              },
+              "clusterNetwork": {
+                "type": "string",
+                "minLength": 1
+              },
+              "serviceNetwork": {
+                "type": "string",
+                "minLength": 1
+              },
+              "pullSecret": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "namespace",
+                  "name"
+                ],
+                "properties": {
+                  "namespace": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "sshKey": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "namespace",
+                  "name"
+                ],
+                "properties": {
+                  "namespace": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "workerCores": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 256
+              },
+              "maxReplicas": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "controlPlaneNodeSelector": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "workerNodeSelector": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "profiles": {
+            "minProperties": 1
+          }
+        }
+      }
     }
   },
   "definitions": {
