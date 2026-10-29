@@ -326,3 +326,9 @@ certificate renewal and did not clear image caches; it is a functional test,
 not a provisioning benchmark. LWE deliberately gates credential publication on
 full OpenShift installation availability as well as authenticated API access
 and Ready workers.
+
+Deleting the test LWE completed normal provider cleanup. The HostedCluster,
+NodePool, worker VM, both backing namespaces, API Route, cert-manager
+Certificates/Issuers/Secrets, and the 8Gi etcd and 258Gi worker PVs were all
+verified gone. The existing `ai-grid-hub` stayed Ready; no provider or namespace
+finalizers were removed manually.
