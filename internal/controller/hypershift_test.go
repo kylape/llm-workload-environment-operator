@@ -346,3 +346,69 @@ func TestHyperShiftIngressDomainsAreUnique(t *testing.T) {
 		t.Fatalf("invalid or colliding ingress prefixes: %q %q", a, b)
 	}
 }
+
+func TestHyperShiftAPIIngressAndWorkerSizing(t *testing.T) {
+	p := hyperShiftTestProfile()
+	p.APIServerPublishingStrategy = "Route"
+	p.APIServerAddress = ""
+	p.WorkerNodeSelector = map[string]string{"node-role.kubernetes.io/a100-gpu": ""}
+	if err := p.validate(); err != nil {
+		t.Fatal(err)
+	}
+	e := &envapi.LLMWorkloadEnvironment{ObjectMeta: metav1.ObjectMeta{Name: "test", UID: "first"}}
+	hc, np := hyperShiftResources(e, "env-test", p, 1)
+	services, _, _ := unstructured.NestedSlice(hc.Object, "spec", "services")
+	strategy := services[0].(map[string]interface{})["servicePublishingStrategy"].(map[string]interface{})
+	if strategy["type"] != "Route" || strategy["nodePort"] != nil {
+		t.Fatal("routed API must not allocate a NodePort strategy")
+	}
+	host := strategy["route"].(map[string]interface{})["hostname"].(string)
+	if !strings.HasPrefix(host, "api-lwe-") || !strings.HasSuffix(host, "."+p.BaseDomain) {
+		t.Fatalf("invalid API ingress hostname: %s", host)
+	}
+	e.UID = "second"
+	other, _ := hyperShiftResources(e, "env-other", p, 1)
+	otherServices, _, _ := unstructured.NestedSlice(other.Object, "spec", "services")
+	otherStrategy := otherServices[0].(map[string]interface{})["servicePublishingStrategy"].(map[string]interface{})
+	if host == otherStrategy["route"].(map[string]interface{})["hostname"] {
+		t.Fatal("API hostnames collide between environments")
+	}
+	cores, _, _ := unstructured.NestedInt64(np.Object, "spec", "platform", "kubevirt", "compute", "cores")
+	memory, _, _ := unstructured.NestedString(np.Object, "spec", "platform", "kubevirt", "compute", "memory")
+	disk, _, _ := unstructured.NestedString(np.Object, "spec", "platform", "kubevirt", "rootVolume", "persistent", "size")
+	selector, _, _ := unstructured.NestedStringMap(np.Object, "spec", "platform", "kubevirt", "nodeSelector")
+	if cores != 16 || memory != "128Gi" || disk != "258Gi" {
+		t.Fatalf("unexpected worker sizing: %d %s %s", cores, memory, disk)
+	}
+	if value, ok := selector["node-role.kubernetes.io/a100-gpu"]; !ok || value != "" || len(selector) != 1 {
+		t.Fatalf("workers must use the A100 role selector: %v", selector)
+	}
+	p.APIServerPublishingStrategy = "LoadBalancer"
+	if p.validate() == nil {
+		t.Fatal("unsupported publishing strategy accepted")
+	}
+	p.APIServerPublishingStrategy = "NodePort"
+	if p.validate() == nil {
+		t.Fatal("NodePort requires a node address")
+	}
+}
+
+func TestHyperShiftRouteKubeconfigDefaultPort(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer server.Close()
+	c := clientcmdapi.NewConfig()
+	c.CurrentContext = "guest"
+	c.Contexts["guest"] = &clientcmdapi.Context{Cluster: "guest", AuthInfo: "guest"}
+	c.Clusters["guest"] = &clientcmdapi.Cluster{Server: "https://api.example.com", CertificateAuthorityData: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})}
+	c.AuthInfos["guest"] = &clientcmdapi.AuthInfo{Token: "token"}
+	for _, endpoint := range []string{"https://api.example.com", "https://api.example.com:443"} {
+		c.Clusters["guest"].Server = endpoint
+		data, _ := clientcmd.Write(*c)
+		if _, err := portableHyperShiftKubeconfig(data, "api.example.com", 443); err != nil {
+			t.Fatalf("valid API Route rejected: %v", err)
+		}
+		if _, err := portableHyperShiftKubeconfig(data, "api.example.com", 6443); err == nil {
+			t.Fatal("mismatched endpoint port accepted")
+		}
+	}
+}
