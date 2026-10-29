@@ -114,6 +114,15 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShiftManagedObject(ctx con
 	if !environmentOwns(actual, e) || actual.GetDeletionTimestamp() != nil {
 		return nil, fmt.Errorf("%s %s ownership is invalid or deletion is in progress", actual.GetKind(), actual.GetName())
 	}
+	// Strategy markers such as selfSigned:{} must remain present. The general
+	// subset comparison tolerates omitted empty admission-defaulted objects.
+	wantedSpec, _ := desired.Object["spec"].(map[string]interface{})
+	actualSpec, _ := actual.Object["spec"].(map[string]interface{})
+	for key := range wantedSpec {
+		if _, exists := actualSpec[key]; !exists {
+			return nil, fmt.Errorf("%s %s configuration drifted", actual.GetKind(), actual.GetName())
+		}
+	}
 	if !hyperShiftSubset(desired.Object["spec"], actual.Object["spec"]) {
 		return nil, fmt.Errorf("%s %s configuration drifted", actual.GetKind(), actual.GetName())
 	}
