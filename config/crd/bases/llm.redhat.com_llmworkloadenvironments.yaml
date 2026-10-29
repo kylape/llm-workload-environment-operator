@@ -228,8 +228,9 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               kubeconfig:
-                description: Kubeconfig contains the base64-encoded kubeconfig for
-                  a ready environment.
+                description: |-
+                  Kubeconfig contains a base64-encoded kubeconfig for verified API access.
+                  HyperShift may publish it before workers and full installation are Ready.
                 format: byte
                 type: string
               namespaceRef:
