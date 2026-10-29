@@ -347,11 +347,12 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShiftSecret(ctx context.Co
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) finalizeHyperShift(ctx context.Context, e *envapi.LLMWorkloadEnvironment, ns string) (bool, error) {
+	var existing []*unstructured.Unstructured
 	for _, resource := range []struct {
 		gvk  schema.GroupVersionKind
 		name string
 		ref  *corev1.ObjectReference
-	}{{nodePoolGVK, "workers", e.Status.NodePoolRef}, {hostedClusterGVK, "cluster", e.Status.HostedClusterRef}} {
+	}{{hostedClusterGVK, "cluster", e.Status.HostedClusterRef}, {nodePoolGVK, "workers", e.Status.NodePoolRef}} {
 		o := hyperShiftObject(resource.gvk, ns, resource.name)
 		err := r.hyperShiftReader().Get(ctx, client.ObjectKeyFromObject(o), o)
 		if apierrors.IsNotFound(err) {
@@ -366,6 +367,12 @@ func (r *LLMWorkloadEnvironmentReconciler) finalizeHyperShift(ctx context.Contex
 		if err := checkHyperShiftIdentity(o, e, resource.ref); err != nil {
 			return false, err
 		}
+		existing = append(existing, o)
+	}
+	// Destroy the HostedCluster first. HyperShift deletes its CAPI Cluster and
+	// workers together; deleting the last NodePool first can wait forever on
+	// guest disruption budgets that cannot be satisfied with zero workers.
+	for _, o := range existing {
 		if o.GetDeletionTimestamp() == nil {
 			uid := o.GetUID()
 			if err := r.Delete(ctx, o, &client.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}}); client.IgnoreNotFound(err) != nil {
