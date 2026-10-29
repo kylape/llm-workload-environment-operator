@@ -125,7 +125,12 @@ avoids `baseDomainPrefix`: HyperShift 4.22 automatic passthrough routes derive
 their hostnames from the cluster name and base domain. Deploy Services and Routes inside
 the guest normally. Wildcard DNS and network access for the host's ingress
 domain must already exist. HyperShift owns the resulting host routes and router
-NodePorts. LWE does not create a route for every guest application.
+NodePorts. LWE does not create a route for every guest application. In the
+validated deployment, HyperShift provides the guest default ingress certificate
+using the same root CA embedded in its administrator kubeconfig; use that CA
+for HTTPS verification, or configure your own guest ingress certificate. The
+guest operator's separately generated `router-ca` is not necessarily its
+active ingress trust root.
 
 Add the existing `llm.redhat.com/application-profile` label to request Argo CD
 registration when `ARGOCD_NAMESPACE` is configured. Profile ApplicationSets
