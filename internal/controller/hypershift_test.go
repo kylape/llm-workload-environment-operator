@@ -330,3 +330,16 @@ func TestHyperShiftDisabledNeverPublishesHostCredentials(t *testing.T) {
 		t.Fatal("host service account created for hosted cluster mode")
 	}
 }
+
+func TestHyperShiftIngressDomainsAreUnique(t *testing.T) {
+	p := hyperShiftTestProfile()
+	e := &envapi.LLMWorkloadEnvironment{ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 51), UID: "first"}}
+	first, _ := hyperShiftResources(e, "env-first", p, 1)
+	e.UID = "second"
+	second, _ := hyperShiftResources(e, "env-second", p, 1)
+	a, _, _ := unstructured.NestedString(first.Object, "spec", "dns", "baseDomainPrefix")
+	b, _, _ := unstructured.NestedString(second.Object, "spec", "dns", "baseDomainPrefix")
+	if a == b || len(a) > 63 || len(b) > 63 {
+		t.Fatalf("invalid or colliding ingress prefixes: %q %q", a, b)
+	}
+}
