@@ -25,6 +25,12 @@ kueue:
   namespaceLabels: {}
   configRef: kueue-system:kueue-manager-config:controller_manager_config.yaml
 
+# HyperShift and OpenShift Virtualization must already be installed on the host.
+# Profiles contain references to administrator-managed Secrets, never secret data.
+hypershift:
+  enabled: false
+  profiles: {}
+
 crds:
   # CRDs are rendered as ordinary templates and updated during upgrade/sync.
   # Retention annotations protect them when disabled or moved elsewhere.
