@@ -4,5 +4,5 @@ description: Provision LLM workload environments on Kubernetes
 type: application
 version: 0.3.0
 # Source revision of the default runtime image. CRD updates can ship separately.
-appVersion: "73e8093"
+appVersion: "cf7ac84"
 kubeVersion: ">=1.29.0-0"
