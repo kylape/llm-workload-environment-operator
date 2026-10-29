@@ -65,6 +65,7 @@ type LLMWorkloadEnvironmentReconciler struct {
 	APIServerURL    string
 	ArgoCDNamespace string
 	KueueAdmission  *KueueAdmissionConfig
+	HyperShift      *HyperShiftConfig
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -159,7 +160,16 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 	}
 
 	var kubeconfig []byte
-	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
+		config, ready, err := r.ensureHyperShift(ctx, environment, namespaceName)
+		if err != nil {
+			return r.notReady(ctx, environment, namespaceName, "HyperShiftProvisioningFailed", err.Error(), 30*time.Second, nil)
+		}
+		if !ready {
+			return r.notReady(ctx, environment, namespaceName, "HyperShiftNotReady", "Hosted control plane, API access or worker nodes are starting", 5*time.Second, nil)
+		}
+		kubeconfig = config
+	} else if environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
 		config, ready, err := r.ensureVCluster(ctx, environment, namespaceName)
 		if err != nil {
 			if errors.Is(err, ErrVClusterPlatformNotConfigured) {
@@ -184,6 +194,9 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 
 	if err := r.setReady(ctx, environment, namespaceName, kubeconfig, metav1.ConditionTrue, "Ready", "Environment is ready"); err != nil {
 		return ctrl.Result{}, err
+	}
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	if config := r.kueueAdmissionConfig(); config.Enabled && config.ValidationEnabled {
 		// Revalidate configuration drift even when no Argo CD profile is present.
@@ -705,6 +718,15 @@ func (r *LLMWorkloadEnvironmentReconciler) finalize(
 
 	if err := r.removeLegacyKubeconfigSecret(ctx, environment); err != nil {
 		return ctrl.Result{}, err
+	}
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
+		done, err := r.finalizeHyperShift(ctx, environment, namespaceName)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !done {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 	}
 
 	binding := &rbacv1.ClusterRoleBinding{}
