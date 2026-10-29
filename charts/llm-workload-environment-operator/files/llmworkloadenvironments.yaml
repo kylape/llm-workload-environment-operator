@@ -61,17 +61,48 @@ spec:
                 x-kubernetes-validations:
                 - message: clusterQueue is immutable
                   rule: self == oldSelf
+              hypershift:
+                description: HyperShift configures a hosted OpenShift cluster with
+                  KubeVirt workers.
+                properties:
+                  profile:
+                    default: default
+                    description: Profile selects administrator-managed release, placement
+                      and worker sizing.
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                    type: string
+                  replicas:
+                    default: 1
+                    description: Replicas is the desired number of KubeVirt worker
+                      nodes, bounded by the profile.
+                    format: int32
+                    maximum: 100
+                    minimum: 1
+                    type: integer
+                type: object
               mode:
                 default: Namespace
-                description: Mode selects a direct host namespace or an isolated vCluster.
+                description: Mode selects a host namespace, vCluster, or hosted OpenShift
+                  cluster.
                 enum:
                 - Namespace
                 - VCluster
+                - HyperShift
                 type: string
                 x-kubernetes-validations:
                 - message: mode is immutable
                   rule: self == oldSelf
             type: object
+            x-kubernetes-validations:
+            - message: hypershift options require HyperShift mode
+              rule: '!has(self.hypershift) || self.mode == ''HyperShift'''
+            - message: HyperShift profile is immutable
+              rule: 'self.mode != ''HyperShift'' || (has(self.hypershift) && has(self.hypershift.profile)
+                ? self.hypershift.profile : ''default'') == (has(oldSelf.hypershift)
+                && has(oldSelf.hypershift.profile) ? oldSelf.hypershift.profile :
+                ''default'')'
           status:
             properties:
               argoCDClusterSecretRef:
@@ -152,6 +183,50 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              hostedClusterRef:
+                description: HostedClusterRef records the established hosted cluster
+                  identity.
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               kubeconfig:
                 description: Kubeconfig contains the base64-encoded kubeconfig for
                   a ready environment.
@@ -171,12 +246,59 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              nodePoolRef:
+                description: NodePoolRef records the established worker pool identity.
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
             type: object
         type: object
         x-kubernetes-validations:
         - message: environment names must be at most 59 characters to allow the env-
             prefix
           rule: size(self.metadata.name) <= 59
+        - message: HyperShift environment names must be at most 51 characters for
+            the hosted control-plane namespace
+          rule: '!has(self.spec) || !has(self.spec.mode) || self.spec.mode != ''HyperShift''
+            || size(self.metadata.name) <= 51'
     served: true
     storage: true
     subresources:
