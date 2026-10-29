@@ -12,11 +12,20 @@ VCluster modes. It does not install HyperShift, OpenShift Virtualization,
 Kueue, Argo CD, or workload environments. HyperShift is disabled by default.
 The image retains the pinned vCluster chart and scheduling-gate preservation fix.
 
-Tekton PipelineRun `lwe-api-ingress-build-x4p7m` on Pirate tested and built
-operator revision `1da135cf396e50f4ecd5caf2aeec9eb07c0a1090` and published
-`quay.io/klape/llm-workload-environment-operator:git-1da135c`. Its recorded image
-digest is `sha256:86754f136e7b7ad3494165e2cd2d1240bc2f8e9f601358170bc82a11fe6df9aa`.
+Tekton PipelineRun `lwe-cert-manager-build-r446z` on Pirate tested and built
+operator revision `73e809303f8b4bea479218af31deb66c4715cd36` and published
+`quay.io/klape/llm-workload-environment-operator:git-73e8093`. Its recorded image
+digest is `sha256:664374ddb6b2aa080dc0d59b21e61fa6da875ada06de77294de7594a95b55756`.
 The image was verified anonymously readable from Quay.
+
+HyperShift profiles can select `apiServerPublishingStrategy: SharedIngress`.
+This requires an existing cert-manager installation. The operator waits for
+cert-manager to issue a per-environment API certificate before creating the
+HostedCluster, then publishes an API Route on the existing host ingress.
+The [Pirate values](../../config/examples/hypershift-pirate-values.yaml) preserve
+the existing NodePort profile and add a `shared-ingress` profile; Kueue admission
+remains disabled there. See [HyperShift setup](../../docs/hypershift.md) for
+certificate lifetime, renewal and client trust behavior.
 
 ## Installation
 
