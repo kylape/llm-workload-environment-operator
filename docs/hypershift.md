@@ -372,3 +372,8 @@ replicas and its Pod was Pending, demonstrating that resources can be submitted
 before worker capacity becomes available. The existing `ai-grid-hub` retained
 full readiness and also received the APIAccessible condition. These observations
 are from one shared-host run with existing image caches, not a startup SLA.
+
+Deleting the early-access test completed normal cleanup: its LWE,
+HostedCluster, NodePool, both backing namespaces, Route, cert-manager resources
+and allocated PVs were verified gone. No provider or namespace finalizers were
+removed manually. The existing `ai-grid-hub` remained Ready and APIAccessible.
