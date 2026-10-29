@@ -258,6 +258,13 @@ func hyperShiftResources(e *envapi.LLMWorkloadEnvironment, namespace string, p H
 	if p.SSHKey != nil {
 		_ = unstructured.SetNestedMap(hc.Object, map[string]interface{}{"name": "hypershift-ssh-key"}, "spec", "sshKey")
 	}
+	if p.APIServerPublishingStrategy == "Route" {
+		services, _, _ := unstructured.NestedSlice(hc.Object, "spec", "services")
+		services[0].(map[string]interface{})["servicePublishingStrategy"] = map[string]interface{}{
+			"type": "Route", "route": map[string]interface{}{"hostname": fmt.Sprintf("api-lwe-%x.%s", id[:6], p.BaseDomain)},
+		}
+		_ = unstructured.SetNestedSlice(hc.Object, services, "spec", "services")
+	}
 	np := hyperShiftObject(nodePoolGVK, namespace, "workers")
 	np.SetAnnotations(environmentOwnershipAnnotations(e))
 	np.Object["spec"] = map[string]interface{}{
