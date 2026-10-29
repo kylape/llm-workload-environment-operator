@@ -111,10 +111,12 @@ record the provider resource UIDs. Names are intentionally scoped to each
 environment namespace.
 
 `apiServerPublishingStrategy: Route` publishes the hosted Kubernetes API through
-host ingress at `https://api-lwe-<UID-hash>.<profile-base-domain>:443`. HyperShift
-owns the passthrough Route and provisions API certificates and kubeconfigs for
-that hostname. The profile base domain must be reachable through host ingress
-DNS from clients and worker VMs. Each environment gets a unique API hostname.
+management ingress on HTTPS port 443. HyperShift lets the management ingress
+controller allocate the Route hostname, then provisions API certificates and
+kubeconfigs for it. Use the endpoint in the published kubeconfig. Custom API
+hostnames are deliberately omitted: on KubeVirt they select a dedicated HCP
+router backed by a separate LoadBalancer rather than shared management ingress.
+Clients and worker VMs must be able to reach the management ingress domain.
 
 Omitting the publishing strategy retains `NodePort` compatibility. That strategy
 requires `apiServerAddress` and allocates a separate NodePort per cluster;
