@@ -21,7 +21,7 @@ spec:
             - --leader-elect
             - --metrics-bind-address=:8443
             - --health-probe-bind-address=:8081
-          image: quay.io/klape/llm-workload-environment-operator@sha256:34c28dde797a8c2232ed8486ee2ec473322ca038f5cfecf4106ccd016aebb472
+          image: quay.io/klape/llm-workload-environment-operator@sha256:af6c42f0f79026c38ea264d2803a2255f7064dab9394fa2e75b19a910a4df859
           name: manager
           env:
             # Supported values are openshift and coreweave. OpenShift is auto-detected when unset.
