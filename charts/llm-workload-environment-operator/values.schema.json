@@ -190,7 +190,6 @@
               "releaseImage",
               "pullSecret",
               "baseDomain",
-              "apiServerAddress",
               "etcdStorageClass",
               "workerStorageClass"
             ],
@@ -292,8 +291,34 @@
                 "additionalProperties": {
                   "type": "string"
                 }
+              },
+              "apiServerPublishingStrategy": {
+                "type": "string",
+                "enum": [
+                  "NodePort",
+                  "Route"
+                ]
               }
-            }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "required": [
+                    "apiServerPublishingStrategy"
+                  ],
+                  "properties": {
+                    "apiServerPublishingStrategy": {
+                      "const": "Route"
+                    }
+                  }
+                },
+                "else": {
+                  "required": [
+                    "apiServerAddress"
+                  ]
+                }
+              }
+            ]
           }
         }
       },
