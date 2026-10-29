@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"net"
 	"net/url"
 	"strconv"
 	"time"
@@ -58,7 +57,14 @@ func portableHyperShiftKubeconfig(data []byte, host string, port int64) ([]byte,
 		return nil, fmt.Errorf("hosted kubeconfig is missing its cluster or credentials")
 	}
 	u, err := url.Parse(cluster.Server)
-	if err != nil || u.Scheme != "https" || u.Host != net.JoinHostPort(host, strconv.FormatInt(port, 10)) || host == "" || port < 1 || port > 65535 || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+	if err != nil {
+		return nil, fmt.Errorf("invalid hosted API endpoint")
+	}
+	endpointPort := u.Port()
+	if endpointPort == "" {
+		endpointPort = "443"
+	}
+	if u.Scheme != "https" || u.Hostname() != host || endpointPort != strconv.FormatInt(port, 10) || host == "" || port < 1 || port > 65535 || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return nil, fmt.Errorf("kubeconfig endpoint does not match the published hosted API endpoint")
 	}
 	pool := x509.NewCertPool()
