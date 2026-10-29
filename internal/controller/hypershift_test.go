@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -247,7 +248,7 @@ func TestHyperShiftProfileConfiguration(t *testing.T) {
 			}
 		})
 	}
-	for _, change := range []func(*HyperShiftProfile){func(p *HyperShiftProfile) { p.ReleaseImage = "release:latest" }, func(p *HyperShiftProfile) { p.APIServerAddress = "127.0.0.1" }, func(p *HyperShiftProfile) { p.APIServerAddress = "api.example.com:6443" }, func(p *HyperShiftProfile) { p.PullSecret.Name = "" }, func(p *HyperShiftProfile) { p.WorkerRootDisk = "0" }, func(p *HyperShiftProfile) { p.ServiceNetwork = p.ClusterNetwork }, func(p *HyperShiftProfile) { p.ServiceNetwork = "172.30.0.0/16" }} {
+	for _, change := range []func(*HyperShiftProfile){func(p *HyperShiftProfile) { p.ReleaseImage = "release:latest" }, func(p *HyperShiftProfile) { p.APIServerAddress = "127.0.0.1" }, func(p *HyperShiftProfile) { p.APIServerAddress = "api.example.com:6443" }, func(p *HyperShiftProfile) { p.PullSecret.Name = "" }, func(p *HyperShiftProfile) { p.WorkerRootDisk = "0" }, func(p *HyperShiftProfile) { p.ServiceNetwork = p.ClusterNetwork }, func(p *HyperShiftProfile) { p.ClusterNetwork = "10.244.0.0/24" }} {
 		bad := p
 		change(&bad)
 		if bad.validate() == nil {
@@ -289,5 +290,43 @@ func TestHyperShiftCredentialsRejectUnsafeConfiguration(t *testing.T) {
 				t.Fatalf("unexpected validation: %v", err)
 			}
 		})
+	}
+}
+
+func TestHyperShiftDisabledNeverPublishesHostCredentials(t *testing.T) {
+	r, e := hyperShiftFixture(t)
+	r.HyperShift.Enabled = false
+	r.KueueAdmission = &KueueAdmissionConfig{Enabled: false}
+	ctx := context.Background()
+	request := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(e)}
+	for range 2 {
+		if _, err := r.Reconcile(ctx, request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := r.Get(ctx, request.NamespacedName, e); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.Status.Kubeconfig) != 0 {
+		t.Fatal("disabled hosted provider exposed a host kubeconfig")
+	}
+	found := false
+	for _, condition := range e.Status.Conditions {
+		if condition.Type == envapi.ReadyCondition {
+			found = true
+			if condition.Status != metav1.ConditionFalse || condition.Reason != "HyperShiftProvisioningFailed" {
+				t.Fatalf("unexpected status: %v", condition)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing readiness status")
+	}
+	accounts := &corev1.ServiceAccountList{}
+	if err := r.List(ctx, accounts, client.InNamespace("env-test")); err != nil {
+		t.Fatal(err)
+	}
+	if len(accounts.Items) != 0 {
+		t.Fatal("host service account created for hosted cluster mode")
 	}
 }
