@@ -6,19 +6,17 @@ cluster: the CRD and ClusterRole names are cluster-wide and are referenced by
 the operator. The release namespace is configurable; the chart does not create
 or manage that Namespace itself.
 
-The default runtime image is pinned by digest. Chart version `0.2.0` packages
-the current CRD and RBAC, with runtime image built from operator revision
-`b29e27c`. The chart does not install Kueue, Argo CD, or workload environments.
-The operator image contains the vCluster chart and pins the vCluster runtime
-with the host Kueue scheduling-gate preservation fix.
+The default runtime image is pinned by digest. Chart version `0.3.0` packages
+HyperShift mode, optional Kueue integration, and the existing Namespace and
+VCluster modes. It does not install HyperShift, OpenShift Virtualization,
+Kueue, Argo CD, or workload environments. HyperShift is disabled by default.
+The image retains the pinned vCluster chart and scheduling-gate preservation fix.
 
-The default image supports both the full Kueue opt-out and the separate admission
-validation switch. Tekton PipelineRun `lwe-optional-kueue-build-mflm9` on Pirate
-built and published `quay.io/klape/llm-workload-environment-operator:git-b29e27c`.
-Its recorded source revision and the registry image revision label both match
-`b29e27cfd3108eabaef9e95d375298946f4c0beb`. The pinned image digest is
-`sha256:60970caa85c294cb1ae37538eabff800435ec172641630289cdd9af99a2f82e3`.
-The previous `ba2d02c` image does not implement the new switch semantics.
+Tekton PipelineRun `lwe-hypershift-build-ldb2v` on Pirate tested and built
+operator revision `1bf2ffa116c8c32f880ef5651850ab0c118b7488` and published
+`quay.io/klape/llm-workload-environment-operator:git-1bf2ffa`. Its recorded image
+digest is `sha256:34c28dde797a8c2232ed8486ee2ec473322ca038f5cfecf4106ccd016aebb472`.
+The image was verified anonymously readable from Quay.
 
 ## Installation
 
@@ -69,6 +67,7 @@ Application is created by adding these examples.
 | Value | Meaning |
 | --- | --- |
 | `platform` | Empty, `coreweave`, or `openshift`; maps to `PLATFORM` |
+| `hypershift.enabled`, `hypershift.profiles` | Opt-in hosted OpenShift provisioning with administrator-managed profiles; see [setup](../../docs/hypershift.md) |
 | `argocd.namespace` | Host Argo CD namespace for cluster Secrets; empty disables registration |
 | `kueue.admissionEnabled` | Main integration switch mapped to `KUEUE_ADMISSION_ENABLED`; defaults to `true` |
 | `kueue.admissionValidationEnabled` | Namespace admission check mapped to `KUEUE_ADMISSION_VALIDATION_ENABLED`; defaults to `true` |
@@ -87,7 +86,7 @@ admission switches, unsupported platform names, and misspelled configuration
 keys. The operator performs its existing Kubernetes label and configuration
 validation at runtime.
 
-`kueue.admissionEnabled: false` allows both Namespace and VCluster environments
+`kueue.admissionEnabled: false` allows Namespace, VCluster and HyperShift environments
 to provision without Kueue installed. It skips queue authorization, Kueue API
 discovery and resource reads/writes, namespace labeling, and admission validation.
 It takes precedence over `kueue.admissionValidationEnabled`. Existing LocalQueues
