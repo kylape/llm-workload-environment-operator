@@ -31,6 +31,9 @@ spec:
             # Empty disables registration; recorded registrations are cleaned up.
             - name: ARGOCD_NAMESPACE
               value: ""
+            # Optional hosted OpenShift provisioning; see docs/hypershift.md.
+            - name: HYPERSHIFT_CONFIG
+              value: '{"enabled":false,"profiles":{}}'
             # Enable queue checks, LocalQueues, namespace labels, and validation.
             # Set false to provision environments without a Kueue dependency.
             - name: KUEUE_ADMISSION_ENABLED
