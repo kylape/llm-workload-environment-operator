@@ -21,22 +21,23 @@ type HyperShiftConfig struct {
 }
 
 type HyperShiftProfile struct {
-	ReleaseImage             string                  `json:"releaseImage"`
-	PullSecret               corev1.SecretReference  `json:"pullSecret"`
-	SSHKey                   *corev1.SecretReference `json:"sshKey,omitempty"`
-	BaseDomain               string                  `json:"baseDomain"`
-	APIServerAddress         string                  `json:"apiServerAddress"`
-	EtcdStorageClass         string                  `json:"etcdStorageClass"`
-	EtcdStorageSize          string                  `json:"etcdStorageSize,omitempty"`
-	WorkerStorageClass       string                  `json:"workerStorageClass"`
-	WorkerCores              int32                   `json:"workerCores,omitempty"`
-	WorkerMemory             string                  `json:"workerMemory,omitempty"`
-	WorkerRootDisk           string                  `json:"workerRootDisk,omitempty"`
-	MaxReplicas              int32                   `json:"maxReplicas,omitempty"`
-	ControlPlaneNodeSelector map[string]string       `json:"controlPlaneNodeSelector,omitempty"`
-	WorkerNodeSelector       map[string]string       `json:"workerNodeSelector,omitempty"`
-	ClusterNetwork           string                  `json:"clusterNetwork,omitempty"`
-	ServiceNetwork           string                  `json:"serviceNetwork,omitempty"`
+	ReleaseImage                string                  `json:"releaseImage"`
+	PullSecret                  corev1.SecretReference  `json:"pullSecret"`
+	SSHKey                      *corev1.SecretReference `json:"sshKey,omitempty"`
+	BaseDomain                  string                  `json:"baseDomain"`
+	APIServerAddress            string                  `json:"apiServerAddress"`
+	APIServerPublishingStrategy string                  `json:"apiServerPublishingStrategy,omitempty"`
+	EtcdStorageClass            string                  `json:"etcdStorageClass"`
+	EtcdStorageSize             string                  `json:"etcdStorageSize,omitempty"`
+	WorkerStorageClass          string                  `json:"workerStorageClass"`
+	WorkerCores                 int32                   `json:"workerCores,omitempty"`
+	WorkerMemory                string                  `json:"workerMemory,omitempty"`
+	WorkerRootDisk              string                  `json:"workerRootDisk,omitempty"`
+	MaxReplicas                 int32                   `json:"maxReplicas,omitempty"`
+	ControlPlaneNodeSelector    map[string]string       `json:"controlPlaneNodeSelector,omitempty"`
+	WorkerNodeSelector          map[string]string       `json:"workerNodeSelector,omitempty"`
+	ClusterNetwork              string                  `json:"clusterNetwork,omitempty"`
+	ServiceNetwork              string                  `json:"serviceNetwork,omitempty"`
 }
 
 func HyperShiftConfigFromEnv(getenv func(string) string) (*HyperShiftConfig, error) {
@@ -72,13 +73,13 @@ func (p *HyperShiftProfile) defaults() {
 		p.EtcdStorageSize = "8Gi"
 	}
 	if p.WorkerCores == 0 {
-		p.WorkerCores = 4
+		p.WorkerCores = 16
 	}
 	if p.WorkerMemory == "" {
-		p.WorkerMemory = "16Gi"
+		p.WorkerMemory = "128Gi"
 	}
 	if p.WorkerRootDisk == "" {
-		p.WorkerRootDisk = "64Gi"
+		p.WorkerRootDisk = "258Gi"
 	}
 	if p.MaxReplicas == 0 {
 		p.MaxReplicas = 10
@@ -98,12 +99,17 @@ func (p HyperShiftProfile) validate() error {
 	if len(validation.IsDNS1123Subdomain(p.BaseDomain)) != 0 || p.BaseDomain == "" {
 		return fmt.Errorf("baseDomain must be a DNS name")
 	}
-	if ip := net.ParseIP(p.APIServerAddress); ip != nil {
-		if ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() {
-			return fmt.Errorf("apiServerAddress must be reachable by hosted workers and clients")
+	if p.APIServerPublishingStrategy != "" && p.APIServerPublishingStrategy != "NodePort" && p.APIServerPublishingStrategy != "Route" {
+		return fmt.Errorf("apiServerPublishingStrategy must be NodePort or Route")
+	}
+	if p.APIServerPublishingStrategy != "Route" {
+		if ip := net.ParseIP(p.APIServerAddress); ip != nil {
+			if ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() {
+				return fmt.Errorf("apiServerAddress must be reachable by hosted workers and clients")
+			}
+		} else if len(validation.IsDNS1123Subdomain(p.APIServerAddress)) != 0 || p.APIServerAddress == "localhost" || strings.HasSuffix(p.APIServerAddress, ".svc") || strings.HasSuffix(p.APIServerAddress, ".cluster.local") {
+			return fmt.Errorf("apiServerAddress must be an external node address without a port")
 		}
-	} else if len(validation.IsDNS1123Subdomain(p.APIServerAddress)) != 0 || p.APIServerAddress == "localhost" || strings.HasSuffix(p.APIServerAddress, ".svc") || strings.HasSuffix(p.APIServerAddress, ".cluster.local") {
-		return fmt.Errorf("apiServerAddress must be an external node address without a port")
 	}
 	for _, ref := range []*corev1.SecretReference{&p.PullSecret, p.SSHKey} {
 		if ref != nil && (len(validation.IsDNS1123Label(ref.Namespace)) != 0 || len(validation.IsDNS1123Subdomain(ref.Name)) != 0) {
