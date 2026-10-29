@@ -21,13 +21,13 @@ spec:
             - --leader-elect
             - --metrics-bind-address=:8443
             - --health-probe-bind-address=:8081
-          image: quay.io/klape/llm-workload-environment-operator:latest
+          image: quay.io/klape/llm-workload-environment-operator@sha256:34c28dde797a8c2232ed8486ee2ec473322ca038f5cfecf4106ccd016aebb472
           name: manager
           env:
             # Supported values are openshift and coreweave. OpenShift is auto-detected when unset.
             - name: PLATFORM
               value: ""
-            # Optional: register labeled vClusters in this Argo CD namespace.
+            # Optional: register labeled VCluster or HyperShift environments in this Argo CD namespace.
             # Empty disables registration; recorded registrations are cleaned up.
             - name: ARGOCD_NAMESPACE
               value: ""
