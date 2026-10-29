@@ -19,7 +19,8 @@ hypershift:
         kubernetes.io/hostname: a100-03
       workerNodeSelector:
         node-role.kubernetes.io/a100-gpu: ''
-      apiServerPublishingStrategy: Route
+      apiServerPublishingStrategy: NodePort
+      apiServerAddress: 10.14.217.16
 kueue:
   namespaceLabels:
     kueue.openshift.io/managed: 'true'
