@@ -7,6 +7,7 @@ import (
 
 const (
 	ReadyCondition            = "Ready"
+	APIAccessibleCondition    = "APIAccessible"
 	ArgoCDRegisteredCondition = "ArgoCDRegistered"
 )
 
@@ -65,7 +66,8 @@ type LLMWorkloadEnvironmentStatus struct {
 	// NodePoolRef records the established worker pool identity.
 	NodePoolRef *corev1.ObjectReference `json:"nodePoolRef,omitempty"`
 
-	// Kubeconfig contains the base64-encoded kubeconfig for a ready environment.
+	// Kubeconfig contains a base64-encoded kubeconfig for verified API access.
+	// HyperShift may publish it before workers and full installation are Ready.
 	Kubeconfig []byte `json:"kubeconfig,omitempty"`
 
 	// ArgoCDClusterSecretRef records the registration Secret to reconcile or clean
