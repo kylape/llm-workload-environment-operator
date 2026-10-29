@@ -99,8 +99,8 @@ func (p HyperShiftProfile) validate() error {
 	if len(validation.IsDNS1123Subdomain(p.BaseDomain)) != 0 || p.BaseDomain == "" {
 		return fmt.Errorf("baseDomain must be a DNS name")
 	}
-	if p.APIServerPublishingStrategy != "" && p.APIServerPublishingStrategy != "NodePort" && p.APIServerPublishingStrategy != "Route" {
-		return fmt.Errorf("apiServerPublishingStrategy must be NodePort or Route")
+	if p.APIServerPublishingStrategy != "" && p.APIServerPublishingStrategy != "NodePort" && p.APIServerPublishingStrategy != "Route" && p.APIServerPublishingStrategy != "SharedIngress" {
+		return fmt.Errorf("apiServerPublishingStrategy must be NodePort, Route or SharedIngress")
 	}
 	if p.APIServerPublishingStrategy != "Route" {
 		if ip := net.ParseIP(p.APIServerAddress); ip != nil {
