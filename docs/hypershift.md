@@ -33,7 +33,8 @@ hypershift:
         namespace: llm-workload-environment-operator
         name: hypershift-pull-secret
       baseDomain: apps.openshift.nm.rdu4.corp.redhat.com
-      apiServerPublishingStrategy: Route
+      apiServerPublishingStrategy: NodePort
+      apiServerAddress: 10.14.217.16
       etcdStorageClass: lvms-a100-tier1-storage
       workerStorageClass: lvms-a100-tier1-storage
       controlPlaneNodeSelector:
@@ -110,17 +111,21 @@ The controller creates `HostedCluster/cluster` and `NodePool/workers` in
 record the provider resource UIDs. Names are intentionally scoped to each
 environment namespace.
 
-`apiServerPublishingStrategy: Route` publishes the hosted Kubernetes API through
-management ingress on HTTPS port 443. HyperShift lets the management ingress
-controller allocate the Route hostname, then provisions API certificates and
-kubeconfigs for it. Use the endpoint in the published kubeconfig. Custom API
-hostnames are deliberately omitted: on KubeVirt they select a dedicated HCP
-router backed by a separate LoadBalancer rather than shared management ingress.
-Clients and worker VMs must be able to reach the management ingress domain.
-
-Omitting the publishing strategy retains `NodePort` compatibility. That strategy
-requires `apiServerAddress` and allocates a separate NodePort per cluster;
+`apiServerPublishingStrategy: NodePort` is the working Pirate configuration.
+It requires `apiServerAddress` and allocates a separate NodePort per cluster;
 clients and workers must reach the configured address and NodePort range.
+Omitting the strategy also selects NodePort.
+
+`apiServerPublishingStrategy: Route` requests HyperShift's native API Route on
+HTTPS port 443 with a unique `api-lwe-<identity>.<baseDomain>` hostname. On
+KubeVirt this requires a dedicated HCP router with a working LoadBalancer
+provider and DNS pointing the hostname at that router. It does not reuse the
+management cluster's shared ingress. On Pirate the dedicated router did not
+receive a LoadBalancer address, so this strategy could not finish provisioning.
+Omitting the API Route hostname also failed at runtime: the control-plane
+operator requires it. Shared host ingress for the Kubernetes API remains
+unresolved; the Pirate example therefore retains NodePort. Guest application
+Routes continue to use host ingress independently of the API strategy.
 
 Pirate's worker selector targets the empty-valued
 `node-role.kubernetes.io/a100-gpu` role label, allowing scheduling on all seven
