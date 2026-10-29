@@ -162,6 +162,12 @@ class HelmChartTests(unittest.TestCase):
                    "workerCores": 4, "workerMemory": "16Gi", "maxReplicas": 3}
         config = {"enabled": True, "profiles": {"default": profile}}
         self.assertEqual(json.loads(environment(resources({"hypershift": config}))["HYPERSHIFT_CONFIG"]), config)
+        routed_profile = dict(profile, apiServerPublishingStrategy="Route")
+        del routed_profile["apiServerAddress"]
+        routed = {"enabled": True, "profiles": {"default": routed_profile}}
+        self.assertEqual(json.loads(environment(resources({"hypershift": routed}))["HYPERSHIFT_CONFIG"]), routed)
+        self.assertNotEqual(render({"hypershift": {"profiles": {"default": dict(routed_profile, apiServerPublishingStrategy="NodePort")}}}).returncode, 0)
+        self.assertNotEqual(render({"hypershift": {"profiles": {"default": dict(profile, apiServerPublishingStrategy="LoadBalancer")}}}).returncode, 0)
         for invalid in ({"enabled": "true"}, {"enabled": True},
                         {"profiles": {"bad_name": profile}},
                         {"profiles": {"default": dict(profile, releaseImage="release:latest")}},
