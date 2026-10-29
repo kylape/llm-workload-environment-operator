@@ -11,6 +11,7 @@ import (
 	envapi "github.com/kylape/llm-workload-environment-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -202,6 +203,9 @@ func hyperShiftCondition(o *unstructured.Unstructured, name string) bool {
 func hyperShiftSubset(want, actual interface{}) bool {
 	switch w := want.(type) {
 	case map[string]interface{}:
+		if len(w) == 0 && actual == nil {
+			return true
+		}
 		a, ok := actual.(map[string]interface{})
 		if !ok {
 			return false
@@ -351,6 +355,9 @@ func (r *LLMWorkloadEnvironmentReconciler) finalizeHyperShift(ctx context.Contex
 		o := hyperShiftObject(resource.gvk, ns, resource.name)
 		err := r.hyperShiftReader().Get(ctx, client.ObjectKeyFromObject(o), o)
 		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if apimeta.IsNoMatchError(err) && resource.ref == nil {
 			continue
 		}
 		if err != nil {
