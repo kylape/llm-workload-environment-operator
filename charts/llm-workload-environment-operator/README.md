@@ -6,19 +6,28 @@ cluster: the CRD and ClusterRole names are cluster-wide and are referenced by
 the operator. The release namespace is configurable; the chart does not create
 or manage that Namespace itself.
 
-The default runtime image is pinned by digest. Chart version `0.2.0` packages
-the current CRD and RBAC, with runtime image built from operator revision
-`b29e27c`. The chart does not install Kueue, Argo CD, or workload environments.
-The operator image contains the vCluster chart and pins the vCluster runtime
-with the host Kueue scheduling-gate preservation fix.
+The default runtime image is pinned by digest. Chart version `0.3.0` packages
+HyperShift mode, optional Kueue integration, and the existing Namespace and
+VCluster modes. It does not install HyperShift, OpenShift Virtualization,
+Kueue, Argo CD, or workload environments. HyperShift is disabled by default.
+The image retains the pinned vCluster chart and scheduling-gate preservation fix.
 
-The default image supports both the full Kueue opt-out and the separate admission
-validation switch. Tekton PipelineRun `lwe-optional-kueue-build-mflm9` on Pirate
-built and published `quay.io/klape/llm-workload-environment-operator:git-b29e27c`.
-Its recorded source revision and the registry image revision label both match
-`b29e27cfd3108eabaef9e95d375298946f4c0beb`. The pinned image digest is
-`sha256:60970caa85c294cb1ae37538eabff800435ec172641630289cdd9af99a2f82e3`.
-The previous `ba2d02c` image does not implement the new switch semantics.
+Tekton PipelineRun `lwe-early-api-build-s7gmj` on Pirate tested and built
+operator revision `cf7ac84d90e7c26189a906722dac1868ba5edc63` and published
+`quay.io/klape/llm-workload-environment-operator:git-cf7ac84`. Its recorded image
+digest is `sha256:5df093dd5a216ed5ab6184a296b4e32836e7d88d836945f4dec2e1dad8f70e26`.
+The image was verified anonymously readable from Quay. HyperShift kubeconfigs
+are published with `APIAccessible=True` once authenticated API checks pass,
+even before workers are Ready. Full environment readiness remains separate.
+
+HyperShift profiles can select `apiServerPublishingStrategy: SharedIngress`.
+This requires an existing cert-manager installation. The operator waits for
+cert-manager to issue a per-environment API certificate before creating the
+HostedCluster, then publishes an API Route on the existing host ingress.
+The [Pirate values](../../config/examples/hypershift-pirate-values.yaml) preserve
+the existing NodePort profile and add a `shared-ingress` profile; Kueue admission
+remains disabled there. See [HyperShift setup](../../docs/hypershift.md) for
+certificate lifetime, renewal and client trust behavior.
 
 ## Installation
 
@@ -64,11 +73,16 @@ OpenShift label default; Helm values deliberately make this choice explicit.
 for CKS public vCluster endpoints. No OpenShift cluster registration or Argo CD
 Application is created by adding these examples.
 
+For Pirate hosted clusters, the administrator values in
+[`config/examples/hypershift-pirate-values.yaml`](../../config/examples/hypershift-pirate-values.yaml)
+select API Routes and 16-core / 128Gi / 258Gi workers across the A100 pool.
+
 ## Configuration
 
 | Value | Meaning |
 | --- | --- |
 | `platform` | Empty, `coreweave`, or `openshift`; maps to `PLATFORM` |
+| `hypershift.enabled`, `hypershift.profiles` | Opt-in hosted OpenShift provisioning with administrator-managed profiles; see [setup](../../docs/hypershift.md) |
 | `argocd.namespace` | Host Argo CD namespace for cluster Secrets; empty disables registration |
 | `kueue.admissionEnabled` | Main integration switch mapped to `KUEUE_ADMISSION_ENABLED`; defaults to `true` |
 | `kueue.admissionValidationEnabled` | Namespace admission check mapped to `KUEUE_ADMISSION_VALIDATION_ENABLED`; defaults to `true` |
@@ -87,7 +101,7 @@ admission switches, unsupported platform names, and misspelled configuration
 keys. The operator performs its existing Kubernetes label and configuration
 validation at runtime.
 
-`kueue.admissionEnabled: false` allows both Namespace and VCluster environments
+`kueue.admissionEnabled: false` allows Namespace, VCluster and HyperShift environments
 to provision without Kueue installed. It skips queue authorization, Kueue API
 discovery and resource reads/writes, namespace labeling, and admission validation.
 It takes precedence over `kueue.admissionValidationEnabled`. Existing LocalQueues

@@ -1,0 +1,13 @@
+apiVersion: llm.redhat.com/v1alpha1
+kind: LLMWorkloadEnvironment
+metadata:
+  name: hosted-example
+  namespace: workload-requests
+spec:
+  mode: HyperShift
+  # Required when the installation enables Kueue. The landing namespace must
+  # allow this queue through llm.redhat.com/allowed-cluster-queues.
+  clusterQueue: inference-workspaces
+  hypershift:
+    profile: default
+    replicas: 1

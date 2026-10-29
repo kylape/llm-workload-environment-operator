@@ -154,7 +154,7 @@ func (r *LLMWorkloadEnvironmentReconciler) prepareArgoCDRegistration(ctx context
 	if ref == nil {
 		return nil
 	}
-	if argoCDRegistrationRequested(environment) && environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster &&
+	if argoCDRegistrationRequested(environment) && supportsClusterRegistration(environment) &&
 		r.ArgoCDNamespace != "" && ref.Namespace == r.ArgoCDNamespace && ref.Name == argoCDClusterSecretName(environment) {
 		return nil
 	}
@@ -257,8 +257,8 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileArgoCDRegistration(ctx conte
 		registrationErr = preparationErr
 	case !argoCDRegistrationRequested(environment):
 		condition.Reason, condition.Message = "NotRequested", "No application profile label is present"
-	case environmentMode(environment) != environmentv1alpha1.EnvironmentModeVCluster:
-		condition.Reason, condition.Message = "UnsupportedMode", "Argo CD registration supports VCluster environments only"
+	case !supportsClusterRegistration(environment):
+		condition.Reason, condition.Message = "UnsupportedMode", "Argo CD registration supports VCluster and HyperShift environments"
 	case r.ArgoCDNamespace == "":
 		condition.Reason, condition.Message = "IntegrationDisabled", "ARGOCD_NAMESPACE is not configured"
 	case provisionErr != nil || !apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ReadyCondition):
@@ -314,7 +314,7 @@ func (r *LLMWorkloadEnvironmentReconciler) mapArgoCDSecret(ctx context.Context, 
 	ref := environment.Status.ArgoCDClusterSecretRef
 	registration := secret.Name == argoCDClusterSecretName(environment) &&
 		((ref != nil && ref.Namespace == secret.Namespace && ref.Name == secret.Name) || (r.ArgoCDNamespace != "" && secret.Namespace == r.ArgoCDNamespace))
-	source := environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster &&
+	source := supportsClusterRegistration(environment) &&
 		secret.Namespace == NamespacePrefix+environment.Name && secret.Name == "vc-"+environment.Name
 	if registration || source {
 		return []reconcile.Request{{NamespacedName: key}}
@@ -353,4 +353,9 @@ func (r *LLMWorkloadEnvironmentReconciler) finalizeArgoCDRegistration(ctx contex
 		return r.setArgoCDSecretReference(ctx, environment, nil)
 	}
 	return err
+}
+
+func supportsClusterRegistration(environment *environmentv1alpha1.LLMWorkloadEnvironment) bool {
+	mode := environmentMode(environment)
+	return mode == environmentv1alpha1.EnvironmentModeVCluster || mode == environmentv1alpha1.EnvironmentModeHyperShift
 }

@@ -59,6 +59,11 @@ func main() {
 		ctrl.Log.Error(err, "invalid Kueue admission configuration")
 		os.Exit(1)
 	}
+	hyperShift, err := environmentcontroller.HyperShiftConfigFromEnv(os.Getenv)
+	if err != nil {
+		ctrl.Log.Error(err, "invalid HyperShift configuration")
+		os.Exit(1)
+	}
 
 	config := ctrl.GetConfigOrDie()
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
@@ -111,6 +116,7 @@ func main() {
 		APIServerURL:      config.Host,
 		ArgoCDNamespace:   argoCDNamespace,
 		KueueAdmission:    &kueueAdmission,
+		HyperShift:        hyperShift,
 	}).SetupWithManager(manager); err != nil {
 		ctrl.Log.Error(err, "unable to create controller")
 		os.Exit(1)

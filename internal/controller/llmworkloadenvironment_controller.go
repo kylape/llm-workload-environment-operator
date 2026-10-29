@@ -65,6 +65,7 @@ type LLMWorkloadEnvironmentReconciler struct {
 	APIServerURL    string
 	ArgoCDNamespace string
 	KueueAdmission  *KueueAdmissionConfig
+	HyperShift      *HyperShiftConfig
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -159,7 +160,22 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 	}
 
 	var kubeconfig []byte
-	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
+		config, ready, err := r.ensureHyperShift(ctx, environment, namespaceName)
+		if err != nil {
+			return r.notReady(ctx, environment, namespaceName, "HyperShiftProvisioningFailed", err.Error(), 30*time.Second, nil)
+		}
+		if !ready {
+			if len(config) != 0 {
+				if err := r.setReady(ctx, environment, namespaceName, config, metav1.ConditionFalse, "HyperShiftNotReady", "Guest API is accessible; workers or OpenShift installation are still starting"); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			return r.notReady(ctx, environment, namespaceName, "HyperShiftNotReady", "Hosted control plane or authenticated API access is starting", 5*time.Second, nil)
+		}
+		kubeconfig = config
+	} else if environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
 		config, ready, err := r.ensureVCluster(ctx, environment, namespaceName)
 		if err != nil {
 			if errors.Is(err, ErrVClusterPlatformNotConfigured) {
@@ -184,6 +200,9 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 
 	if err := r.setReady(ctx, environment, namespaceName, kubeconfig, metav1.ConditionTrue, "Ready", "Environment is ready"); err != nil {
 		return ctrl.Result{}, err
+	}
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	if config := r.kueueAdmissionConfig(); config.Enabled && config.ValidationEnabled {
 		// Revalidate configuration drift even when no Argo CD profile is present.
@@ -677,6 +696,16 @@ func (r *LLMWorkloadEnvironmentReconciler) setReady(
 		Reason:             reason,
 		Message:            message,
 	})
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
+		apiStatus, apiReason, apiMessage := metav1.ConditionFalse, "APIUnavailable", "Verified guest API credentials are not available"
+		if len(kubeconfig) != 0 {
+			apiStatus, apiReason, apiMessage = metav1.ConditionTrue, "APIReachable", "Authenticated guest API is accessible; kubeconfig is available"
+		}
+		apimeta.SetStatusCondition(&environment.Status.Conditions, metav1.Condition{
+			Type: environmentv1alpha1.APIAccessibleCondition, Status: apiStatus,
+			ObservedGeneration: environment.Generation, Reason: apiReason, Message: apiMessage,
+		})
+	}
 	return r.patchEnvironmentStatus(ctx, environment, before)
 }
 
@@ -705,6 +734,15 @@ func (r *LLMWorkloadEnvironmentReconciler) finalize(
 
 	if err := r.removeLegacyKubeconfigSecret(ctx, environment); err != nil {
 		return ctrl.Result{}, err
+	}
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
+		done, err := r.finalizeHyperShift(ctx, environment, namespaceName)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !done {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 	}
 
 	binding := &rbacv1.ClusterRoleBinding{}

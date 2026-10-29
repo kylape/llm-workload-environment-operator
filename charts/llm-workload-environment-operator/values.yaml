@@ -3,9 +3,9 @@ platform: ""
 
 image:
   repository: quay.io/klape/llm-workload-environment-operator
-  tag: git-b29e27c
+  tag: git-cf7ac84
   # A nonempty digest takes precedence over tag.
-  digest: sha256:60970caa85c294cb1ae37538eabff800435ec172641630289cdd9af99a2f82e3
+  digest: sha256:5df093dd5a216ed5ab6184a296b4e32836e7d88d836945f4dec2e1dad8f70e26
   pullPolicy: IfNotPresent
 
 replicaCount: 1
@@ -24,6 +24,12 @@ kueue:
   # validation still requires Kueue to select each backing namespace.
   namespaceLabels: {}
   configRef: kueue-system:kueue-manager-config:controller_manager_config.yaml
+
+# HyperShift and OpenShift Virtualization must already be installed on the host.
+# Profiles contain references to administrator-managed Secrets, never secret data.
+hypershift:
+  enabled: false
+  profiles: {}
 
 crds:
   # CRDs are rendered as ordinary templates and updated during upgrade/sync.

@@ -17,6 +17,11 @@ spec:
     - name: push-image
       type: string
       default: "false"
+  results:
+    - name: image-digest
+      value: $(tasks.build.results.image-digest)
+    - name: source-revision
+      value: $(tasks.build.results.source-revision)
   workspaces:
     - name: source
     - name: registry-auth
@@ -38,6 +43,9 @@ spec:
         - name: registry-auth
           workspace: registry-auth
       taskSpec:
+        results:
+          - name: image-digest
+          - name: source-revision
         params:
           - name: git-url
             type: string
@@ -54,12 +62,21 @@ spec:
         steps:
           - name: clone
             image: alpine/git:2.47.2
+            env:
+              - name: SOURCE_URL
+                value: $(params.git-url)
+              - name: SOURCE_REVISION
+                value: $(params.git-revision)
             script: |
               #!/bin/sh
               set -eu
               find "$(workspaces.source.path)" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-              git clone --depth 1 --branch "$(params.git-revision)" \
-                "$(params.git-url)" "$(workspaces.source.path)"
+              git init "$(workspaces.source.path)"
+              cd "$(workspaces.source.path)"
+              git remote add origin "$SOURCE_URL"
+              git fetch --depth 1 origin "$SOURCE_REVISION"
+              git checkout --detach FETCH_HEAD
+              git rev-parse HEAD | tr -d '\n' > "$(results.source-revision.path)"
           - name: build-manager
             image: golang:1.25
             env:
@@ -74,6 +91,8 @@ spec:
             script: |
               #!/bin/sh
               set -eu
+              go test ./...
+              go vet ./...
               CGO_ENABLED=0 go build -o /tmp/manager ./cmd/manager
             workingDir: $(workspaces.source.path)
           - name: build-image
@@ -99,6 +118,8 @@ spec:
                   exit 1
                 fi
                 export REGISTRY_AUTH_FILE="$(workspaces.registry-auth.path)/.dockerconfigjson"
-                buildah push --storage-driver=vfs "$(params.image)" "docker://$(params.image)"
+                buildah push --storage-driver=vfs --digestfile "$(results.image-digest.path)" "$(params.image)" "docker://$(params.image)"
+              else
+                printf 'not-pushed' > "$(results.image-digest.path)"
               fi
             workingDir: $(workspaces.source.path)
