@@ -66,7 +66,8 @@ For `HyperShift` mode, an administrator profile selects the OpenShift release,
 KubeVirt worker sizing, storage and placement. LWE creates a HostedCluster and
 NodePool, publishes a validated guest administrator kubeconfig, and cleans up
 provider resources on deletion. Worker count can be scaled through the LWE
-resource. Hosted APIs use allocated NodePorts and guest Routes use HyperShift
+resource. Hosted APIs use profile-selected host ingress Routes or NodePorts,
+and guest Routes use HyperShift
 host ingress passthrough. See [HyperShift setup and usage](docs/hypershift.md)
 and the [example request](config/samples/hypershift.yaml).
 
