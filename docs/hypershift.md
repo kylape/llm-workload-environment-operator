@@ -311,3 +311,18 @@ files or kubeconfigs were regenerated for that check.
 
 The existing `klape-dev/ai-grid-hub` remained Ready on its original profile;
 `KUEUE_ADMISSION_ENABLED=false` remained set on the deployed operator.
+
+LWE became Ready at **19:02:06 UTC** and published its own kubeconfig with the
+shared-ingress hostname on port 443 and the original cert-manager CA. That
+exact published file passed authenticated node listing, `auth whoami`
+(`system:admin`), and `/readyz` with TLS verification enabled. The Ready worker
+ran on `a100-07` with 16 cores / 128Gi and a 258Gi local LVM root volume.
+
+The test request overlapped controller rollout: request-to-Ready was 10m36s,
+including about two minutes before the new controller acquired leadership.
+HostedCluster creation to LWE Ready was 8m27s. The API and worker were usable
+earlier; monitoring/Prometheus completed last. This run included forced
+certificate renewal and did not clear image caches; it is a functional test,
+not a provisioning benchmark. LWE deliberately gates credential publication on
+full OpenShift installation availability as well as authenticated API access
+and Ready workers.
