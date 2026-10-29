@@ -221,3 +221,8 @@ Deleting the LWE completed provider cleanup in approximately 4 minutes 30
 seconds, including both VMs, the HostedCluster, NodePool, control-plane namespace,
 backing namespace and associated PVs. All lifecycle actions in the final run
 went through LWE. HyperShift managed the provider resources and ingress routes.
+
+Management API lease-renewal requests timed out during cleanup and caused one
+controller restart. The controller reacquired leadership and completed cleanup.
+The final Deployment was available. These host API delays remain relevant when
+interpreting provisioning and cleanup timings.
