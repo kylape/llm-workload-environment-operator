@@ -162,10 +162,10 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	}
 	// The provider can publish credentials before any worker exists. A missing
 	// reference/endpoint is normal during startup; never substitute host access.
-	name, _, _ := unstructured.NestedString(hc.Object, "status", "kubeconfig", "name")
+	kubeconfigName, _, _ := unstructured.NestedString(hc.Object, "status", "kubeconfig", "name")
 	host, _, _ := unstructured.NestedString(hc.Object, "status", "controlPlaneEndpoint", "host")
 	port, _, _ := unstructured.NestedInt64(hc.Object, "status", "controlPlaneEndpoint", "port")
-	if name == "" || host == "" || port == 0 {
+	if kubeconfigName == "" || host == "" || port == 0 {
 		return nil, false, nil
 	}
 	config, err := r.hyperShiftKubeconfig(ctx, hc)
