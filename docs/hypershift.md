@@ -151,9 +151,12 @@ Provider configuration drift or changed administrator profiles require operator
 attention; use a new profile and environment for release or sizing changes.
 Scaling the worker count is the supported mutable operation.
 
-Deletion removes any Argo CD registration, deletes the NodePool, waits for
-HyperShift to remove the HostedCluster and its control-plane namespace, then
-deletes the backing namespace and releases the LWE finalizer. Do not strip
+Deletion removes any Argo CD registration and requests HostedCluster deletion.
+HyperShift destroys the CAPI cluster and its workers together. LWE waits for the
+HostedCluster, NodePool and control-plane namespace to disappear before deleting
+the backing namespace and releasing its finalizer. Deleting the last NodePool
+first would leave drains waiting on guest disruption budgets, so LWE delegates
+the cluster destruction sequence to HyperShift. Do not strip
 provider finalizers or delete encryption material to accelerate cleanup.
 An independent random 32-byte etcd encryption key is persisted before each
 cluster is created and retained across reconciliation. Foreign resources and
