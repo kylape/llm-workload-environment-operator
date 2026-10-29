@@ -12,10 +12,10 @@ VCluster modes. It does not install HyperShift, OpenShift Virtualization,
 Kueue, Argo CD, or workload environments. HyperShift is disabled by default.
 The image retains the pinned vCluster chart and scheduling-gate preservation fix.
 
-Tekton PipelineRun `lwe-hypershift-build-ldb2v` on Pirate tested and built
-operator revision `1bf2ffa116c8c32f880ef5651850ab0c118b7488` and published
-`quay.io/klape/llm-workload-environment-operator:git-1bf2ffa`. Its recorded image
-digest is `sha256:34c28dde797a8c2232ed8486ee2ec473322ca038f5cfecf4106ccd016aebb472`.
+Tekton PipelineRun `lwe-hypershift-build-8kwjz` on Pirate tested and built
+operator revision `7a4c581bdb19a27b6d5d51016f277185a1e14c87` and published
+`quay.io/klape/llm-workload-environment-operator:git-7a4c581`. Its recorded image
+digest is `sha256:af6c42f0f79026c38ea264d2803a2255f7064dab9394fa2e75b19a910a4df859`.
 The image was verified anonymously readable from Quay.
 
 ## Installation
