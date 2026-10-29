@@ -362,8 +362,16 @@ func TestHyperShiftAPIIngressAndWorkerSizing(t *testing.T) {
 	if strategy["type"] != "Route" || strategy["nodePort"] != nil {
 		t.Fatal("routed API must not allocate a NodePort strategy")
 	}
-	if strategy["route"] != nil {
-		t.Fatal("shared API ingress must omit custom hostnames that select a dedicated router/load balancer")
+	host := strategy["route"].(map[string]interface{})["hostname"].(string)
+	if !strings.HasPrefix(host, "api-lwe-") || !strings.HasSuffix(host, "."+p.BaseDomain) {
+		t.Fatalf("invalid API ingress hostname: %s", host)
+	}
+	e.UID = "second"
+	other, _ := hyperShiftResources(e, "env-other", p, 1)
+	otherServices, _, _ := unstructured.NestedSlice(other.Object, "spec", "services")
+	otherStrategy := otherServices[0].(map[string]interface{})["servicePublishingStrategy"].(map[string]interface{})
+	if host == otherStrategy["route"].(map[string]interface{})["hostname"] {
+		t.Fatal("API hostnames collide between environments")
 	}
 	cores, _, _ := unstructured.NestedInt64(np.Object, "spec", "platform", "kubevirt", "compute", "cores")
 	memory, _, _ := unstructured.NestedString(np.Object, "spec", "platform", "kubevirt", "compute", "memory")
