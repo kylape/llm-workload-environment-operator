@@ -148,13 +148,13 @@ func TestHyperShiftLifecycle(t *testing.T) {
 		t.Fatalf("old status accepted after scaling: %v %v", ready, err)
 	}
 	if done, err := r.finalizeHyperShift(ctx, e, "env-test"); err != nil || done {
-		t.Fatalf("must delete workers before cluster: %v %v", done, err)
+		t.Fatalf("must request cluster destruction first: %v %v", done, err)
 	}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(hc), hc); err != nil {
-		t.Fatal("cluster removed before workers")
+	if err := r.Get(ctx, client.ObjectKeyFromObject(np), np); err != nil {
+		t.Fatal("worker pool deleted before cluster destruction")
 	}
 	if done, err := r.finalizeHyperShift(ctx, e, "env-test"); err != nil || done {
-		t.Fatalf("cluster deletion: %v %v", done, err)
+		t.Fatalf("orphan pool deletion: %v %v", done, err)
 	}
 	cp := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "env-test-cluster"}}
 	if err := r.Create(ctx, cp); err != nil {
