@@ -1,6 +1,6 @@
 # Argo CD cluster registration
 
-The operator can register VCluster environments with an existing Argo CD
+The operator can register VCluster and HyperShift environments with an existing Argo CD
 instance. Argo CD ApplicationSets then select an application-profile label to
 deploy applications into those environments.
 
@@ -27,7 +27,7 @@ install Argo CD, create Applications, or manage ApplicationSets.
 
 ## Request registration
 
-Add this label to a VCluster-mode LWE:
+Add this label to a VCluster- or HyperShift-mode LWE:
 
 ```yaml
 metadata:
