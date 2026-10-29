@@ -3,7 +3,7 @@ platform: openshift
 hypershift:
   enabled: true
   profiles:
-    default:
+    default: &nodePortProfile
       releaseImage: quay.io/openshift-release-dev/ocp-release@sha256:4ebbe67679969175b6be1626a64eeab44191117abba298e43742d72b26bf2ecd
       pullSecret:
         namespace: llm-workload-environment-operator
@@ -21,6 +21,9 @@ hypershift:
         node-role.kubernetes.io/a100-gpu: ''
       apiServerPublishingStrategy: NodePort
       apiServerAddress: 10.14.217.16
+    shared-ingress:
+      <<: *nodePortProfile
+      apiServerPublishingStrategy: SharedIngress
 kueue:
   admissionEnabled: false
   namespaceLabels:
