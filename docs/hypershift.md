@@ -116,7 +116,9 @@ the management cluster's NodePort range. The address must remain stable and
 reachable; it is not a cloud load balancer or a newly allocated public IP.
 
 `baseDomainPassthrough: true` lets HyperShift publish guest application routes
-through the management cluster's ingress. Deploy Services and Routes inside
+through the management cluster's ingress. Each guest receives an immutable DNS
+prefix derived from its LWE name and UID, preventing collisions between hosted
+clusters that use the same local resource name. Deploy Services and Routes inside
 the guest normally. Wildcard DNS and network access for the host's ingress
 domain must already exist. HyperShift owns the resulting host routes and router
 NodePorts. LWE does not create a route for every guest application.
