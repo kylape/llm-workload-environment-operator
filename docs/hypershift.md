@@ -177,8 +177,10 @@ the guest normally. Wildcard DNS and network access for the host's ingress
 domain must already exist. HyperShift owns the resulting host routes and router
 NodePorts. LWE does not create a route for every guest application. In the
 validated deployment, HyperShift provides the guest default ingress certificate
-using the same root CA embedded in its administrator kubeconfig; use that CA
-for HTTPS verification, or configure your own guest ingress certificate. The
+using the same root CA embedded in its native HyperShift administrator
+kubeconfig; use that CA for HTTPS verification, or configure your own guest
+ingress certificate. SharedIngress LWE kubeconfigs trust the separate
+cert-manager API CA; that CA does not sign guest application certificates. The
 guest operator's separately generated `router-ca` is not necessarily its
 active ingress trust root.
 
@@ -278,3 +280,34 @@ Management API lease-renewal requests timed out during cleanup and caused one
 controller restart. The controller reacquired leadership and completed cleanup.
 The final Deployment was available. These host API delays remain relevant when
 interpreting provisioning and cleanup timings.
+
+## Certificate-managed ingress validation: 2026-10-29
+
+Tekton PipelineRun `lwe-cert-manager-build-r446z` tested and built runtime
+source `73e809303f8b4bea479218af31deb66c4715cd36`. Its public image is pinned as
+`quay.io/klape/llm-workload-environment-operator@sha256:664374ddb6b2aa080dc0d59b21e61fa6da875ada06de77294de7594a95b55756`.
+Go race tests, vet, Helm lint and nine chart tests passed. Additional tests
+reject stale certificate readiness, missing TLS Secrets, foreign resources,
+changed issuer strategies, and certificates for the wrong hostname.
+
+The fresh `lwe-cert-manager-test/lwe-cert-proof` request used Pirate's
+`shared-ingress` profile, with 16 cores / 128Gi / 258Gi and A100 pool placement.
+Observed UTC timestamps establish the dependency ordering:
+
+| Resource checkpoint | Time |
+| --- | --- |
+| CA Certificate Ready | 18:53:29 |
+| API serving Certificate Ready, TLS Secret populated | 18:53:34 |
+| HostedCluster created | 18:53:39 |
+| API Route admitted by host router `default` | 18:53:45 |
+
+The Route uses TLS passthrough to the hosted API Service on port 6443.
+Authenticated `/readyz` through host ingress succeeded with CA and hostname
+verification. A forced `cmctl renew` advanced the serving Certificate from
+revision 1 to 2 and changed its key. HyperShift propagated the Secret and
+served the new certificate. The original CA bundle and existing test kubeconfig
+continued to verify and authenticate successfully after renewal. No certificate
+files or kubeconfigs were regenerated for that check.
+
+The existing `klape-dev/ai-grid-hub` remained Ready on its original profile;
+`KUEUE_ADMISSION_ENABLED=false` remained set on the deployed operator.
