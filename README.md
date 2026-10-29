@@ -3,9 +3,10 @@
 LLM Workload Environment Operator provisions isolated Kubernetes environments
 for LLM development, serving, and performance testing. It provides a declarative
 boundary between clients such as `infra` or a future UI and cluster services
-such as Kueue and vCluster.
+such as Kueue, vCluster, and HyperShift.
 
-The operator provisions either a host-cluster namespace or a vCluster for each
+The operator provisions a host-cluster namespace, vCluster, or hosted OpenShift
+cluster for each
 namespaced `LLMWorkloadEnvironment` resource. The resource namespace is the
 control boundary: the infra service can manage environments across namespaces, while
 direct users can be limited to a namespace by ordinary Kubernetes RBAC.
@@ -60,6 +61,14 @@ ready with `VClusterPlatformNotConfigured` until a platform is selected.
 The vCluster can read host-cluster `StorageClass` and `CSIStorageCapacity`
 objects through a dedicated read-only role. The chart's own cluster-wide RBAC
 is disabled.
+
+For `HyperShift` mode, an administrator profile selects the OpenShift release,
+KubeVirt worker sizing, storage and placement. LWE creates a HostedCluster and
+NodePool, publishes a validated guest administrator kubeconfig, and cleans up
+provider resources on deletion. Worker count can be scaled through the LWE
+resource. Hosted APIs use allocated NodePorts and guest Routes use HyperShift
+host ingress passthrough. See [HyperShift setup and usage](docs/hypershift.md)
+and the [example request](config/samples/hypershift.yaml).
 
 The reusable environment role does not permit its subjects to mutate LocalQueues,
 cluster RBAC, or CRDs. Kueue queue selection remains controlled by the operator.
