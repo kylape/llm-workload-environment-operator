@@ -66,9 +66,11 @@ For `HyperShift` mode, an administrator profile selects the OpenShift release,
 KubeVirt worker sizing, storage and placement. LWE creates a HostedCluster and
 NodePool, publishes a validated guest administrator kubeconfig, and cleans up
 provider resources on deletion. Worker count can be scaled through the LWE
-resource. Hosted APIs use NodePorts or HyperShift's native API Route strategy,
-which requires a dedicated router and LoadBalancer on KubeVirt. Pirate currently
-uses NodePorts for APIs; guest Routes use HyperShift host ingress passthrough. See [HyperShift setup and usage](docs/hypershift.md)
+resource. SharedIngress profiles use cert-manager to issue API certificates
+before creating the HostedCluster, then publish client access through the host's
+existing ingress on port 443. Worker connectivity retains native NodePorts.
+Guest Routes use HyperShift host ingress passthrough. See
+[HyperShift setup and usage](docs/hypershift.md)
 and the [example request](config/samples/hypershift.yaml).
 
 The reusable environment role does not permit its subjects to mutate LocalQueues,
