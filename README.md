@@ -65,8 +65,10 @@ is disabled.
 For `HyperShift` mode, an administrator profile selects the OpenShift release,
 KubeVirt worker sizing, storage and placement. LWE creates a HostedCluster and
 NodePool, publishes a validated guest administrator kubeconfig, and cleans up
-provider resources on deletion. Worker count can be scaled through the LWE
-resource. SharedIngress profiles use cert-manager to issue API certificates
+provider resources on deletion. Once authenticated API access works, LWE
+publishes the kubeconfig with `APIAccessible=True` so clients can apply resources
+before workers are ready. `Ready=True` still requires healthy workers and full
+OpenShift installation. Worker count can be scaled through the LWE resource. SharedIngress profiles use cert-manager to issue API certificates
 before creating the HostedCluster, then publish client access through the host's
 existing ingress on port 443. Worker connectivity retains native NodePorts.
 Guest Routes use HyperShift host ingress passthrough. See
