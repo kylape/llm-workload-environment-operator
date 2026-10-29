@@ -184,3 +184,40 @@ KUBEBUILDER_ASSETS=/path/to/envtest go test ./api/v1alpha1 -count=1
 
 The Tekton pipeline tests and builds an exact Git revision and records its
 source SHA and pushed image digest. Use the resulting digest when deploying.
+
+
+## Reference validation: 2026-10-29
+
+Tekton PipelineRun `lwe-hypershift-build-8kwjz` tested and built source revision
+`7a4c581bdb19a27b6d5d51016f277185a1e14c87`. The deployed public operator image is
+`quay.io/klape/llm-workload-environment-operator@sha256:af6c42f0f79026c38ea264d2803a2255f7064dab9394fa2e75b19a910a4df859`.
+
+A fresh LWE request on Pirate used the profile above: OpenShift 4.22.18,
+KubeVirt workers on `a100-03`, local LVM, 4 cores / 16Gi / 64Gi per worker,
+and 8Gi for etcd. Observations measured from the LWE request:
+
+| Checkpoint | Observed time |
+| --- | --- |
+| HostedCluster created | 1 second |
+| Guest API available | 47 seconds |
+| First worker Ready | 5 minutes 42 seconds |
+| LWE Ready with published kubeconfig | 9 minutes 35 seconds |
+
+LWE readiness included full OpenShift installation; monitoring was the final
+operator to complete. These are observations from one run on a shared host.
+Image caches were not cleared; each worker received a fresh LVM root volume.
+They are not a cold-host benchmark or a provisioning SLA.
+
+Using the kubeconfig published by LWE, the test deployed an application in the
+guest and received `Hello OpenShift!` over HTTPS through host ingress. Certificate
+trust and hostname verification passed using the guest CA from that kubeconfig.
+
+Changing the LWE worker count from one to two completed in approximately
+4 minutes 30 seconds. Readiness and published credentials were withdrawn at
+the new request generation, then restored once both workers were Ready. The
+application remained available during scale-out and after it completed.
+
+Deleting the LWE completed provider cleanup in approximately 4 minutes 30
+seconds, including both VMs, the HostedCluster, NodePool, control-plane namespace,
+backing namespace and associated PVs. All lifecycle actions in the final run
+went through LWE. HyperShift managed the provider resources and ingress routes.
