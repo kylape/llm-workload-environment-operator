@@ -260,9 +260,9 @@ func hyperShiftResources(e *envapi.LLMWorkloadEnvironment, namespace string, p H
 	}
 	if p.APIServerPublishingStrategy == "Route" {
 		services, _, _ := unstructured.NestedSlice(hc.Object, "spec", "services")
-		services[0].(map[string]interface{})["servicePublishingStrategy"] = map[string]interface{}{
-			"type": "Route", "route": map[string]interface{}{"hostname": fmt.Sprintf("api-lwe-%x.%s", id[:6], p.BaseDomain)},
-		}
+		// An explicit hostname selects HyperShift's dedicated HCP router and
+		// LoadBalancer. Let management ingress allocate the hostname instead.
+		services[0].(map[string]interface{})["servicePublishingStrategy"] = map[string]interface{}{"type": "Route"}
 		_ = unstructured.SetNestedSlice(hc.Object, services, "spec", "services")
 	}
 	np := hyperShiftObject(nodePoolGVK, namespace, "workers")
