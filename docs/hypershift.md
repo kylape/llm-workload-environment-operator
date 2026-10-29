@@ -116,9 +116,13 @@ the management cluster's NodePort range. The address must remain stable and
 reachable; it is not a cloud load balancer or a newly allocated public IP.
 
 `baseDomainPassthrough: true` lets HyperShift publish guest application routes
-through the management cluster's ingress. Each guest receives an immutable DNS
-prefix derived from its LWE name and UID, preventing collisions between hosted
-clusters that use the same local resource name. Deploy Services and Routes inside
+through the management cluster's ingress. Each guest receives an immutable base
+domain `<LWE-name>-<UID-hash>.<profile-base-domain>`, preventing collisions
+between hosted clusters that use the same local resource name. The default
+cluster-name prefix remains `cluster`; application routes therefore live beneath
+`apps.cluster.<LWE-name>-<UID-hash>.<profile-base-domain>`. This deliberately
+avoids `baseDomainPrefix`: HyperShift 4.22 automatic passthrough routes derive
+their hostnames from the cluster name and base domain. Deploy Services and Routes inside
 the guest normally. Wildcard DNS and network access for the host's ingress
 domain must already exist. HyperShift owns the resulting host routes and router
 NodePorts. LWE does not create a route for every guest application.
