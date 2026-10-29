@@ -114,6 +114,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if err := r.recordHyperShiftReference(ctx, e, hc); err != nil {
 		return nil, false, err
 	}
+	scaling := false
 	np := hyperShiftObject(nodePoolGVK, namespace, "workers")
 	err = r.hyperShiftReader().Get(ctx, client.ObjectKeyFromObject(np), np)
 	if apierrors.IsNotFound(err) {
@@ -145,7 +146,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 			if err := r.Patch(ctx, np, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})); err != nil {
 				return nil, false, err
 			}
-			return nil, false, nil
+			scaling = true
 		}
 	}
 	if err := r.recordHyperShiftReference(ctx, e, np); err != nil {
@@ -156,14 +157,21 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 			return nil, false, err
 		}
 	}
-	if np.GetDeletionTimestamp() != nil || !hyperShiftCondition(hc, "Available") || !hyperShiftCondition(hc, "ClusterVersionAvailable") || !hyperShiftCondition(np, "Ready") || !hyperShiftCondition(np, "AllNodesHealthy") {
+	if np.GetDeletionTimestamp() != nil {
 		return nil, false, nil
 	}
-	actualReplicas, _, _ := unstructured.NestedInt64(np.Object, "status", "replicas")
-	if actualReplicas != int64(replicas) {
+	// The provider can publish credentials before any worker exists. A missing
+	// reference/endpoint is normal during startup; never substitute host access.
+	name, _, _ := unstructured.NestedString(hc.Object, "status", "kubeconfig", "name")
+	host, _, _ := unstructured.NestedString(hc.Object, "status", "controlPlaneEndpoint", "host")
+	port, _, _ := unstructured.NestedInt64(hc.Object, "status", "controlPlaneEndpoint", "port")
+	if name == "" || host == "" || port == 0 {
 		return nil, false, nil
 	}
 	config, err := r.hyperShiftKubeconfig(ctx, hc)
+	if apierrors.IsNotFound(err) {
+		return nil, false, nil
+	}
 	if err != nil {
 		return nil, false, err
 	}
@@ -173,10 +181,15 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 			return nil, false, err
 		}
 	}
-	if err := probeHyperShiftAPI(ctx, config, replicas); err != nil {
+	readyWorkers, err := probeHyperShiftAPI(ctx, config)
+	if err != nil {
 		return nil, false, nil
 	}
-	return config, true, nil
+	actualReplicas, _, _ := unstructured.NestedInt64(np.Object, "status", "replicas")
+	ready := !scaling && hyperShiftCondition(hc, "Available") && hyperShiftCondition(hc, "ClusterVersionAvailable") &&
+		hyperShiftCondition(np, "Ready") && hyperShiftCondition(np, "AllNodesHealthy") &&
+		actualReplicas == int64(replicas) && readyWorkers >= replicas
+	return config, ready, nil
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) recordHyperShiftReference(ctx context.Context, e *envapi.LLMWorkloadEnvironment, o *unstructured.Unstructured) error {
