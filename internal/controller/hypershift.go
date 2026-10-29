@@ -241,7 +241,7 @@ func hyperShiftResources(e *envapi.LLMWorkloadEnvironment, namespace string, p H
 		"pullSecret":                   map[string]interface{}{"name": "hypershift-pull-secret"},
 		"infraID":                      fmt.Sprintf("lwe-%x", id[:6]),
 		"controllerAvailabilityPolicy": "SingleReplica", "infrastructureAvailabilityPolicy": "SingleReplica",
-		"dns":              map[string]interface{}{"baseDomain": p.BaseDomain, "baseDomainPrefix": fmt.Sprintf("%s-%x", e.Name, id[:5])},
+		"dns":              map[string]interface{}{"baseDomain": fmt.Sprintf("%s-%x.%s", e.Name, id[:5], p.BaseDomain)},
 		"nodeSelector":     stringMap(p.ControlPlaneNodeSelector),
 		"networking":       map[string]interface{}{"networkType": "OVNKubernetes", "clusterNetwork": []interface{}{map[string]interface{}{"cidr": p.ClusterNetwork}}, "serviceNetwork": []interface{}{map[string]interface{}{"cidr": p.ServiceNetwork}}},
 		"etcd":             map[string]interface{}{"managementType": "Managed", "managed": map[string]interface{}{"storage": map[string]interface{}{"type": "PersistentVolume", "persistentVolume": map[string]interface{}{"size": p.EtcdStorageSize, "storageClassName": p.EtcdStorageClass}}}},
