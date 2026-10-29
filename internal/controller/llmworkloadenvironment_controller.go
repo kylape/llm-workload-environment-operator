@@ -166,7 +166,13 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 			return r.notReady(ctx, environment, namespaceName, "HyperShiftProvisioningFailed", err.Error(), 30*time.Second, nil)
 		}
 		if !ready {
-			return r.notReady(ctx, environment, namespaceName, "HyperShiftNotReady", "Hosted control plane, API access or worker nodes are starting", 5*time.Second, nil)
+			if len(config) != 0 {
+				if err := r.setReady(ctx, environment, namespaceName, config, metav1.ConditionFalse, "HyperShiftNotReady", "Guest API is accessible; workers or OpenShift installation are still starting"); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			return r.notReady(ctx, environment, namespaceName, "HyperShiftNotReady", "Hosted control plane or authenticated API access is starting", 5*time.Second, nil)
 		}
 		kubeconfig = config
 	} else if environmentMode(environment) == environmentv1alpha1.EnvironmentModeVCluster {
@@ -690,6 +696,16 @@ func (r *LLMWorkloadEnvironmentReconciler) setReady(
 		Reason:             reason,
 		Message:            message,
 	})
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
+		apiStatus, apiReason, apiMessage := metav1.ConditionFalse, "APIUnavailable", "Verified guest API credentials are not available"
+		if len(kubeconfig) != 0 {
+			apiStatus, apiReason, apiMessage = metav1.ConditionTrue, "APIReachable", "Authenticated guest API is accessible; kubeconfig is available"
+		}
+		apimeta.SetStatusCondition(&environment.Status.Conditions, metav1.Condition{
+			Type: environmentv1alpha1.APIAccessibleCondition, Status: apiStatus,
+			ObservedGeneration: environment.Generation, Reason: apiReason, Message: apiMessage,
+		})
+	}
 	return r.patchEnvironmentStatus(ctx, environment, before)
 }
 
