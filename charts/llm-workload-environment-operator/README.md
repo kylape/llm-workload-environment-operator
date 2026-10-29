@@ -12,10 +12,10 @@ VCluster modes. It does not install HyperShift, OpenShift Virtualization,
 Kueue, Argo CD, or workload environments. HyperShift is disabled by default.
 The image retains the pinned vCluster chart and scheduling-gate preservation fix.
 
-Tekton PipelineRun `lwe-hypershift-build-8kwjz` on Pirate tested and built
-operator revision `7a4c581bdb19a27b6d5d51016f277185a1e14c87` and published
-`quay.io/klape/llm-workload-environment-operator:git-7a4c581`. Its recorded image
-digest is `sha256:af6c42f0f79026c38ea264d2803a2255f7064dab9394fa2e75b19a910a4df859`.
+Tekton PipelineRun `lwe-api-ingress-build-lt5cd` on Pirate tested and built
+operator revision `94ab668f6014ac798f649b91ef0f9e3db81a404f` and published
+`quay.io/klape/llm-workload-environment-operator:git-94ab668`. Its recorded image
+digest is `sha256:2a4c4ad9ea7bd5b4efc2d26b897be3f8049c064a93e18d318993b4f3c4758770`.
 The image was verified anonymously readable from Quay.
 
 ## Installation
@@ -61,6 +61,10 @@ OpenShift label default; Helm values deliberately make this choice explicit.
 `platform: ""` permits OpenShift auto-detection. Configure `coreweave` explicitly
 for CKS public vCluster endpoints. No OpenShift cluster registration or Argo CD
 Application is created by adding these examples.
+
+For Pirate hosted clusters, the administrator values in
+[`config/examples/hypershift-pirate-values.yaml`](../../config/examples/hypershift-pirate-values.yaml)
+select API Routes and 16-core / 128Gi / 258Gi workers across the A100 pool.
 
 ## Configuration
 
