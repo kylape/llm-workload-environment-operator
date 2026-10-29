@@ -22,6 +22,7 @@ hypershift:
       apiServerPublishingStrategy: NodePort
       apiServerAddress: 10.14.217.16
 kueue:
+  admissionEnabled: false
   namespaceLabels:
     kueue.openshift.io/managed: 'true'
     inference.redhat.com/workspace: lwe
