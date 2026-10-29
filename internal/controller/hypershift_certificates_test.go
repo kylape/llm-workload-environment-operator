@@ -238,3 +238,23 @@ func TestHyperShiftIngressKubeconfigAndRenewal(t *testing.T) {
 		t.Fatal("wrong hostname certificate accepted")
 	}
 }
+
+func TestHyperShiftRejectsIssuerStrategyDrift(t *testing.T) {
+	ctx := context.Background()
+	r, e, p := sharedIngressFixture(t)
+	if _, err := r.ensureHyperShiftCertificate(ctx, e, "env-test", p); err != nil {
+		t.Fatal(err)
+	}
+	issuer := hyperShiftObject(issuerGVK, "env-test", "hypershift-api-selfsigned")
+	if err := r.Get(ctx, client.ObjectKeyFromObject(issuer), issuer); err != nil {
+		t.Fatal(err)
+	}
+	issuer.Object["spec"] = map[string]interface{}{"ca": map[string]interface{}{"secretName": "foreign-ca"}}
+	if err := r.Update(ctx, issuer); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.ensureHyperShiftCertificate(ctx, e, "env-test", p); err == nil {
+		t.Fatal("changed issuer strategy accepted")
+	}
+	noHostedCluster(t, r)
+}
