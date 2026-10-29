@@ -88,24 +88,26 @@ func portableHyperShiftKubeconfig(data []byte, host string, port int64) ([]byte,
 	return clientcmd.Write(*out)
 }
 
-func probeHyperShiftAPI(ctx context.Context, data []byte, replicas int32) error {
+// probeHyperShiftAPI verifies authenticated API access independently of workers
+// and returns the observed count of Ready, schedulable worker nodes.
+func probeHyperShiftAPI(ctx context.Context, data []byte) (int32, error) {
 	config, err := clientcmd.RESTConfigFromKubeConfig(data)
 	if err != nil {
-		return fmt.Errorf("hosted API client configuration is invalid")
+		return 0, fmt.Errorf("hosted API client configuration is invalid")
 	}
 	config.Timeout = 5 * time.Second
 	guest, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		return fmt.Errorf("could not create hosted API client")
+		return 0, fmt.Errorf("could not create hosted API client")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := guest.CoreV1().RESTClient().Get().AbsPath("/readyz").Do(ctx).Error(); err != nil {
-		return fmt.Errorf("hosted API is not ready")
+		return 0, fmt.Errorf("hosted API is not ready")
 	}
 	nodes, err := guest.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("hosted API credentials cannot list worker nodes")
+		return 0, fmt.Errorf("hosted API credentials cannot list worker nodes")
 	}
 	var ready int32
 	for _, node := range nodes.Items {
@@ -118,10 +120,7 @@ func probeHyperShiftAPI(ctx context.Context, data []byte, replicas int32) error 
 			}
 		}
 	}
-	if ready < replicas {
-		return fmt.Errorf("hosted worker nodes are not ready")
-	}
-	return nil
+	return ready, nil
 }
 
 // Keep HyperShift-issued client credentials and use cert-manager's stable CA
