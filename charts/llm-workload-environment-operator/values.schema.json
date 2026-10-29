@@ -296,7 +296,8 @@
                 "type": "string",
                 "enum": [
                   "NodePort",
-                  "Route"
+                  "Route",
+                  "SharedIngress"
                 ]
               }
             },
