@@ -33,22 +33,22 @@ hypershift:
         namespace: llm-workload-environment-operator
         name: hypershift-pull-secret
       baseDomain: apps.openshift.nm.rdu4.corp.redhat.com
-      apiServerAddress: 10.14.217.16
+      apiServerPublishingStrategy: Route
       etcdStorageClass: lvms-a100-tier1-storage
       workerStorageClass: lvms-a100-tier1-storage
       controlPlaneNodeSelector:
         kubernetes.io/hostname: a100-03
       workerNodeSelector:
-        kubernetes.io/hostname: a100-03
-      workerCores: 4
-      workerMemory: 16Gi
-      workerRootDisk: 64Gi
+        node-role.kubernetes.io/a100-gpu: ""
+      workerCores: 16
+      workerMemory: 128Gi
+      workerRootDisk: 258Gi
       maxReplicas: 10
       clusterNetwork: 10.244.0.0/16
       serviceNetwork: 172.29.0.0/16
 ```
 
-Defaults are one worker per request, 4 CPU / 16Gi memory / 64Gi root disk,
+Defaults are one worker per request, 16 CPU / 128Gi memory / 258Gi root disk,
 8Gi etcd storage, a profile maximum of ten workers, and the guest CIDRs above.
 Choose guest networks that do not overlap the management cluster's machine,
 pod, service or other routed networks. Guest pod networks need room for /23
@@ -110,10 +110,23 @@ The controller creates `HostedCluster/cluster` and `NodePool/workers` in
 record the provider resource UIDs. Names are intentionally scoped to each
 environment namespace.
 
-Each hosted API receives an automatically allocated NodePort on the configured
-node address. Clients and worker VMs must be able to reach that address and
-the management cluster's NodePort range. The address must remain stable and
-reachable; it is not a cloud load balancer or a newly allocated public IP.
+`apiServerPublishingStrategy: Route` publishes the hosted Kubernetes API through
+host ingress at `https://api-lwe-<UID-hash>.<profile-base-domain>:443`. HyperShift
+owns the passthrough Route and provisions API certificates and kubeconfigs for
+that hostname. The profile base domain must be reachable through host ingress
+DNS from clients and worker VMs. Each environment gets a unique API hostname.
+
+Omitting the publishing strategy retains `NodePort` compatibility. That strategy
+requires `apiServerAddress` and allocates a separate NodePort per cluster;
+clients and workers must reach the configured address and NodePort range.
+
+Pirate's worker selector targets the empty-valued
+`node-role.kubernetes.io/a100-gpu` role label, allowing scheduling on all seven
+A100 nodes. Its `lvms-a100-tier1-storage` class uses `WaitForFirstConsumer` and
+provides node-local volumes across that pool. Each bound worker disk remains
+tied to its selected node. Control-plane placement remains on `a100-03`.
+The complete administrator values are in
+[`config/examples/hypershift-pirate-values.yaml`](../config/examples/hypershift-pirate-values.yaml).
 
 `baseDomainPassthrough: true` lets HyperShift publish guest application routes
 through the management cluster's ingress. Each guest receives an immutable base
@@ -192,7 +205,7 @@ Tekton PipelineRun `lwe-hypershift-build-8kwjz` tested and built source revision
 `7a4c581bdb19a27b6d5d51016f277185a1e14c87`. The deployed public operator image is
 `quay.io/klape/llm-workload-environment-operator@sha256:af6c42f0f79026c38ea264d2803a2255f7064dab9394fa2e75b19a910a4df859`.
 
-A fresh LWE request on Pirate used the profile above: OpenShift 4.22.18,
+A fresh LWE request on Pirate used the original profile: OpenShift 4.22.18,
 KubeVirt workers on `a100-03`, local LVM, 4 cores / 16Gi / 64Gi per worker,
 and 8Gi for etcd. Observations measured from the LWE request:
 
