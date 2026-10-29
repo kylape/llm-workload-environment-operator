@@ -132,20 +132,17 @@ func (p HyperShiftProfile) validate() error {
 		}
 	}
 	var networks []*net.IPNet
-	for _, value := range []string{p.ClusterNetwork, p.ServiceNetwork} {
+	for index, value := range []string{p.ClusterNetwork, p.ServiceNetwork} {
 		ip, network, err := net.ParseCIDR(value)
 		if err != nil || ip.To4() == nil || ip.String() != network.IP.String() {
 			return fmt.Errorf("guest networks must be canonical IPv4 CIDRs")
 		}
+		if prefix, _ := network.Mask.Size(); index == 0 && prefix > 23 {
+			return fmt.Errorf("clusterNetwork must accommodate the default /23 node subnet")
+		}
 		for _, other := range networks {
 			if network.Contains(other.IP) || other.Contains(network.IP) {
 				return fmt.Errorf("guest networks overlap")
-			}
-		}
-		for _, reserved := range []string{"10.128.0.0/14", "172.30.0.0/16", "10.14.216.0/23"} {
-			_, host, _ := net.ParseCIDR(reserved)
-			if network.Contains(host.IP) || host.Contains(network.IP) {
-				return fmt.Errorf("guest networks overlap management cluster networks")
 			}
 		}
 		networks = append(networks, network)
