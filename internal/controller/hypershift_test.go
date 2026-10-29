@@ -337,9 +337,12 @@ func TestHyperShiftIngressDomainsAreUnique(t *testing.T) {
 	first, _ := hyperShiftResources(e, "env-first", p, 1)
 	e.UID = "second"
 	second, _ := hyperShiftResources(e, "env-second", p, 1)
-	a, _, _ := unstructured.NestedString(first.Object, "spec", "dns", "baseDomainPrefix")
-	b, _, _ := unstructured.NestedString(second.Object, "spec", "dns", "baseDomainPrefix")
-	if a == b || len(a) > 63 || len(b) > 63 {
+	a, _, _ := unstructured.NestedString(first.Object, "spec", "dns", "baseDomain")
+	b, _, _ := unstructured.NestedString(second.Object, "spec", "dns", "baseDomain")
+	if _, exists, _ := unstructured.NestedString(first.Object, "spec", "dns", "baseDomainPrefix"); exists {
+		t.Fatal("HyperShift passthrough ignores baseDomainPrefix; use its default cluster-name prefix")
+	}
+	if a == b || strings.Split(a, ".")[0] == strings.Split(b, ".")[0] || len(strings.Split(a, ".")[0]) > 63 {
 		t.Fatalf("invalid or colliding ingress prefixes: %q %q", a, b)
 	}
 }
