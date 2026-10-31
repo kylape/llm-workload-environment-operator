@@ -32,7 +32,52 @@ type HyperShiftEnvironmentSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100
 	Replicas *int32 `json:"replicas,omitempty"`
+
+	// ImageDigestMirrorSet configures the digest-only image mirrors on HyperShift workers.
+	// +optional
+	ImageDigestMirrorSet *ImageDigestMirrorSetSpec `json:"imageDigestMirrorSet,omitempty"`
 }
+
+// ImageDigestMirrorSetSpec contains the spec fields for an ImageDigestMirrorSet
+// delivered to the HyperShift worker NodePool.
+type ImageDigestMirrorSetSpec struct {
+	// ImageDigestMirrors lists the source repositories and their digest mirrors.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=255
+	// +listType=atomic
+	ImageDigestMirrors []ImageDigestMirror `json:"imageDigestMirrors"`
+}
+
+// ImageDigestMirror defines one source repository and its ordered mirror list.
+type ImageDigestMirror struct {
+	// Source is the registry or repository used in image references.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	Source string `json:"source"`
+
+	// Mirrors are tried in order when pulling an image by digest.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=255
+	// +listType=atomic
+	Mirrors []string `json:"mirrors"`
+
+	// MirrorSourcePolicy controls whether image pulls may fall back to Source.
+	// It defaults to NeverContactSource so pulls fail if all mirrors fail.
+	// +kubebuilder:default=NeverContactSource
+	// +kubebuilder:validation:Enum=NeverContactSource;AllowContactingSource
+	MirrorSourcePolicy MirrorSourcePolicy `json:"mirrorSourcePolicy,omitempty"`
+}
+
+// MirrorSourcePolicy controls whether a digest pull can fall back to its source.
+// +kubebuilder:validation:Enum=NeverContactSource;AllowContactingSource
+type MirrorSourcePolicy string
+
+const (
+	// NeverContactSource prevents fallback to the original source repository.
+	NeverContactSource MirrorSourcePolicy = "NeverContactSource"
+	// AllowContactingSource permits fallback to the original source repository.
+	AllowContactingSource MirrorSourcePolicy = "AllowContactingSource"
+)
 
 // +kubebuilder:validation:XValidation:rule="!has(self.hypershift) || self.mode == 'HyperShift'",message="hypershift options require HyperShift mode"
 // +kubebuilder:validation:XValidation:rule="self.mode != 'HyperShift' || (has(self.hypershift) && has(self.hypershift.profile) ? self.hypershift.profile : 'default') == (has(oldSelf.hypershift) && has(oldSelf.hypershift.profile) ? oldSelf.hypershift.profile : 'default')",message="HyperShift profile is immutable"
