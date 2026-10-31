@@ -81,7 +81,32 @@ spec:
   hypershift:
     profile: default
     replicas: 1
+    imageDigestMirrorSet:
+      imageDigestMirrors:
+        - source: registry.redhat.io/rhoai
+          mirrors:
+            - quay.io/rhoai
+          mirrorSourcePolicy: NeverContactSource
+        - source: registry.redhat.io/rhaii
+          mirrors:
+            - registry.stage.redhat.io/rhaii
+          mirrorSourcePolicy: NeverContactSource
+        - source: registry.redhat.io/rhaii-early-access
+          mirrors:
+            - registry.stage.redhat.io/rhaii-early-access
+          mirrorSourcePolicy: NeverContactSource
+        - source: registry.redhat.io/rhaii-fast
+          mirrors:
+            - registry.stage.redhat.io/rhaii-fast
+          mirrorSourcePolicy: NeverContactSource
 ```
+
+`hypershift.imageDigestMirrorSet` accepts the `ImageDigestMirrorSet` spec. LWE
+delivers it to HyperShift workers through the NodePool `config` reference. Each
+mirror entry defaults to `mirrorSourcePolicy: NeverContactSource`; if all mirrors
+fail, the worker does not fall back to the source registry. Updating this
+configuration changes the NodePool config reference and triggers a worker
+rollout.
 
 The mode and profile are immutable. `replicas` can be changed within the
 profile limit. HyperShift environment names are limited to 51 characters so
