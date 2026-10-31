@@ -96,6 +96,9 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if err := r.ensureHyperShiftCredentials(ctx, e, namespace, p, apierrors.IsNotFound(err)); err != nil {
 		return nil, false, err
 	}
+	if err := r.ensureHyperShiftImageDigestMirrorSetConfig(ctx, e, namespace); err != nil {
+		return nil, false, err
+	}
 	desiredHC, desiredNP := hyperShiftResources(e, namespace, p, replicas)
 	if apierrors.IsNotFound(err) {
 		hc = desiredHC
@@ -134,15 +137,29 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 		}
 		actual := np.DeepCopy()
 		unstructured.RemoveNestedField(actual.Object, "spec", "replicas")
+		unstructured.RemoveNestedField(actual.Object, "spec", "config")
 		desired := desiredNP.DeepCopy()
 		unstructured.RemoveNestedField(desired.Object, "spec", "replicas")
+		unstructured.RemoveNestedField(desired.Object, "spec", "config")
 		if !hyperShiftSubset(desired.Object["spec"], actual.Object["spec"]) {
 			return nil, false, fmt.Errorf("NodePool configuration drifted from its administrator profile")
 		}
 		current, _, _ := unstructured.NestedInt64(np.Object, "spec", "replicas")
-		if current != int64(replicas) {
+		currentConfig, currentConfigFound, _ := unstructured.NestedFieldNoCopy(np.Object, "spec", "config")
+		desiredConfig, desiredConfigFound, _ := unstructured.NestedFieldNoCopy(desiredNP.Object, "spec", "config")
+		configChanged := currentConfigFound != desiredConfigFound || !reflect.DeepEqual(currentConfig, desiredConfig)
+		if current != int64(replicas) || configChanged {
 			before := np.DeepCopy()
-			_ = unstructured.SetNestedField(np.Object, int64(replicas), "spec", "replicas")
+			if current != int64(replicas) {
+				_ = unstructured.SetNestedField(np.Object, int64(replicas), "spec", "replicas")
+			}
+			if configChanged {
+				if desiredConfigFound {
+					_ = unstructured.SetNestedSlice(np.Object, desiredConfig.([]interface{}), "spec", "config")
+				} else {
+					unstructured.RemoveNestedField(np.Object, "spec", "config")
+				}
+			}
 			if err := r.Patch(ctx, np, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})); err != nil {
 				return nil, false, err
 			}
@@ -314,6 +331,9 @@ func hyperShiftResources(e *envapi.LLMWorkloadEnvironment, namespace string, p H
 			"networkInterfaceMultiqueue": "Enable", "nodeSelector": stringMap(p.WorkerNodeSelector),
 			"rootVolume": map[string]interface{}{"type": "Persistent", "cacheStrategy": map[string]interface{}{"type": "None"}, "persistent": map[string]interface{}{"accessModes": []interface{}{"ReadWriteOnce"}, "size": p.WorkerRootDisk, "storageClass": p.WorkerStorageClass, "volumeMode": "Block"}},
 		}},
+	}
+	if configName := hyperShiftImageDigestMirrorSetConfigName(e); configName != "" {
+		_ = unstructured.SetNestedSlice(np.Object, []interface{}{map[string]interface{}{"name": configName}}, "spec", "config")
 	}
 	return hc, np
 }
