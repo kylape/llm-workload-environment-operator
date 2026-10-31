@@ -64,7 +64,6 @@ type ImageDigestMirror struct {
 	// MirrorSourcePolicy controls whether image pulls may fall back to Source.
 	// It defaults to NeverContactSource so pulls fail if all mirrors fail.
 	// +kubebuilder:default=NeverContactSource
-	// +kubebuilder:validation:Enum=NeverContactSource;AllowContactingSource
 	MirrorSourcePolicy MirrorSourcePolicy `json:"mirrorSourcePolicy,omitempty"`
 }
 
