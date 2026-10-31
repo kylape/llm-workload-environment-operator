@@ -65,6 +65,52 @@ spec:
                 description: HyperShift configures a hosted OpenShift cluster with
                   KubeVirt workers.
                 properties:
+                  imageDigestMirrorSet:
+                    description: ImageDigestMirrorSet configures the digest-only image
+                      mirrors on HyperShift workers.
+                    properties:
+                      imageDigestMirrors:
+                        description: ImageDigestMirrors lists the source repositories
+                          and their digest mirrors.
+                        items:
+                          description: ImageDigestMirror defines one source repository
+                            and its ordered mirror list.
+                          properties:
+                            mirrorSourcePolicy:
+                              default: NeverContactSource
+                              description: |-
+                                MirrorSourcePolicy controls whether image pulls may fall back to Source.
+                                It defaults to NeverContactSource so pulls fail if all mirrors fail.
+                              enum:
+                              - NeverContactSource
+                              - AllowContactingSource
+                              type: string
+                            mirrors:
+                              description: Mirrors are tried in order when pulling
+                                an image by digest.
+                              items:
+                                type: string
+                              maxItems: 255
+                              minItems: 1
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            source:
+                              description: Source is the registry or repository used
+                                in image references.
+                              maxLength: 255
+                              minLength: 1
+                              type: string
+                          required:
+                          - mirrors
+                          - source
+                          type: object
+                        maxItems: 255
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: atomic
+                    required:
+                    - imageDigestMirrors
+                    type: object
                   profile:
                     default: default
                     description: Profile selects administrator-managed release, placement
