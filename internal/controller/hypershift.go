@@ -39,6 +39,15 @@ func hyperShiftObject(gvk schema.GroupVersionKind, namespace, name string) *unst
 	return o
 }
 
+func hyperShiftProfileHash(profile HyperShiftProfile) string {
+	// Worker size profiles affect the NodePool, not the HostedCluster. Keep them
+	// out of this hash to preserve identities recorded before named sizes existed;
+	// NodePool drift checking validates the selected sizing separately.
+	profile.WorkerSizes = nil
+	profileJSON, _ := json.Marshal(profile)
+	return fmt.Sprintf("%x", sha256.Sum256(profileJSON))
+}
+
 func hyperShiftOptions(e *envapi.LLMWorkloadEnvironment) (string, envapi.HyperShiftSize, int32) {
 	profile, size, replicas := "default", envapi.HyperShiftSizeSmall, int32(1)
 	if e.Spec.HyperShift != nil {
@@ -77,8 +86,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if replicas < 1 || replicas > p.MaxReplicas {
 		return nil, false, fmt.Errorf("worker replicas must be between 1 and profile maximum %d", p.MaxReplicas)
 	}
-	profileJSON, _ := json.Marshal(p)
-	profileHash := fmt.Sprintf("%x", sha256.Sum256(profileJSON))
+	profileHash := hyperShiftProfileHash(p)
 	hc := hyperShiftObject(hostedClusterGVK, namespace, "cluster")
 	err := r.hyperShiftReader().Get(ctx, client.ObjectKeyFromObject(hc), hc)
 	if err != nil && !apierrors.IsNotFound(err) {
