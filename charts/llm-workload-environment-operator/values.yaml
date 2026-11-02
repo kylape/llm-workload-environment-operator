@@ -15,6 +15,11 @@ argocd:
   # Empty disables registration. This chart does not install Argo CD.
   namespace: ""
 
+expiration:
+  # Go time.Duration strings. Omitted LWE durations use minDuration.
+  minDuration: 1h
+  maxDuration: 720h
+
 kueue:
   # Main integration switch: false permits provisioning without Kueue installed.
   admissionEnabled: true

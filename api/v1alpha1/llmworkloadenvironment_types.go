@@ -9,6 +9,8 @@ const (
 	ReadyCondition            = "Ready"
 	APIAccessibleCondition    = "APIAccessible"
 	ArgoCDRegisteredCondition = "ArgoCDRegistered"
+	ExpirationReadyCondition  = "ExpirationReady"
+	ExpiredCondition          = "Expired"
 )
 
 type EnvironmentMode string
@@ -102,6 +104,12 @@ type LLMWorkloadEnvironmentSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="mode is immutable"
 	Mode EnvironmentMode `json:"mode,omitempty"`
 
+	// Duration is the requested lifetime of the environment, using Go time.Duration syntax.
+	// If omitted, the operator uses its configured minimum duration.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	Duration string `json:"duration,omitempty"`
+
 	// HyperShift configures a hosted OpenShift cluster with KubeVirt workers.
 	// +optional
 	HyperShift *HyperShiftEnvironmentSpec `json:"hypershift,omitempty"`
@@ -116,6 +124,14 @@ type LLMWorkloadEnvironmentSpec struct {
 }
 
 type LLMWorkloadEnvironmentStatus struct {
+	// ExpirationTimestamp is the absolute expiration time currently enforced by the operator.
+	// Changing spec.duration updates this timestamp only when the new duration is valid.
+	ExpirationTimestamp *metav1.Time `json:"expirationTimestamp,omitempty"`
+
+	// LastObservedDuration records the last requested duration evaluated by the operator,
+	// including invalid values that did not change ExpirationTimestamp.
+	LastObservedDuration string `json:"lastObservedDuration,omitempty"`
+
 	// NamespaceRef identifies the backing host-cluster namespace.
 	NamespaceRef *corev1.LocalObjectReference `json:"namespaceRef,omitempty"`
 
@@ -148,6 +164,8 @@ type LLMWorkloadEnvironmentStatus struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.spec) || !has(self.spec.mode) || self.spec.mode != 'HyperShift' || size(self.metadata.name) <= 51",message="HyperShift environment names must be at most 51 characters for the hosted control-plane namespace"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.namespaceRef.name"
+// +kubebuilder:printcolumn:name="Expires",type="date",JSONPath=".status.expirationTimestamp"
+// +kubebuilder:printcolumn:name="Expired",type="string",JSONPath=".status.conditions[?(@.type=='Expired')].status"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 type LLMWorkloadEnvironment struct {
 	metav1.TypeMeta   `json:",inline"`

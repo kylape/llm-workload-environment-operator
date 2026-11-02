@@ -5,4 +5,5 @@ metadata:
   namespace: alice-dev
 spec:
   mode: Namespace
+  duration: 168h
   clusterQueue: inference-workspaces

@@ -31,6 +31,11 @@ spec:
             # Empty disables registration; recorded registrations are cleaned up.
             - name: ARGOCD_NAMESPACE
               value: ""
+            # Environment durations are Go time.Duration strings.
+            - name: LWE_MIN_DURATION
+              value: 1h
+            - name: LWE_MAX_DURATION
+              value: 720h
             # Optional hosted OpenShift provisioning; see docs/hypershift.md.
             - name: HYPERSHIFT_CONFIG
               value: '{"enabled":false,"profiles":{}}'

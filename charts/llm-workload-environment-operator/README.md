@@ -6,10 +6,10 @@ cluster: the CRD and ClusterRole names are cluster-wide and are referenced by
 the operator. The release namespace is configurable; the chart does not create
 or manage that Namespace itself.
 
-The default runtime image is pinned by digest. Chart version `0.3.0` packages
-HyperShift mode, optional Kueue integration, and the existing Namespace and
-VCluster modes. It does not install HyperShift, OpenShift Virtualization,
-Kueue, Argo CD, or workload environments. HyperShift is disabled by default.
+The default runtime image is pinned by digest. Chart version `0.4.0` packages
+LWE expiration, HyperShift mode, optional Kueue integration, and the existing
+Namespace and VCluster modes. It does not install HyperShift, OpenShift
+Virtualization, Kueue, Argo CD, or workload environments. HyperShift is disabled by default.
 The image retains the pinned vCluster chart and scheduling-gate preservation fix.
 
 Tekton PipelineRun `lwe-early-api-build-s7gmj` on Pirate tested and built
@@ -84,6 +84,7 @@ select API Routes and 16-core / 128Gi / 258Gi workers across the A100 pool.
 | `platform` | Empty, `coreweave`, or `openshift`; maps to `PLATFORM` |
 | `hypershift.enabled`, `hypershift.profiles` | Opt-in hosted OpenShift provisioning with administrator-managed profiles and per-worker `workerSizes`; see [setup](../../docs/hypershift.md) |
 | `argocd.namespace` | Host Argo CD namespace for cluster Secrets; empty disables registration |
+| `expiration.minDuration`, `expiration.maxDuration` | Accepted Go duration bounds mapped to `LWE_MIN_DURATION` and `LWE_MAX_DURATION`; defaults are `1h` and `720h` |
 | `kueue.admissionEnabled` | Main integration switch mapped to `KUEUE_ADMISSION_ENABLED`; defaults to `true` |
 | `kueue.admissionValidationEnabled` | Namespace admission check mapped to `KUEUE_ADMISSION_VALIDATION_ENABLED`; defaults to `true` |
 | `kueue.namespaceLabels` | String map serialized to JSON for `KUEUE_NAMESPACE_LABELS` |
@@ -100,6 +101,9 @@ The namespace-label map requires string values, so quote values such as
 admission switches, unsupported platform names, and misspelled configuration
 keys. The operator performs its existing Kubernetes label and configuration
 validation at runtime.
+
+See [LWE expiration](../../docs/expiration.md) for duration updates, status,
+namespace teardown, and the administrator exemption annotation.
 
 `kueue.admissionEnabled: false` allows Namespace, VCluster and HyperShift environments
 to provision without Kueue installed. It skips queue authorization, Kueue API
