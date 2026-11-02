@@ -39,17 +39,29 @@ func hyperShiftObject(gvk schema.GroupVersionKind, namespace, name string) *unst
 	return o
 }
 
-func hyperShiftOptions(e *envapi.LLMWorkloadEnvironment) (string, int32) {
-	profile, replicas := "default", int32(1)
+func hyperShiftProfileHash(profile HyperShiftProfile) string {
+	// Worker size profiles affect the NodePool, not the HostedCluster. Keep them
+	// out of this hash to preserve identities recorded before named sizes existed;
+	// NodePool drift checking validates the selected sizing separately.
+	profile.WorkerSizes = nil
+	profileJSON, _ := json.Marshal(profile)
+	return fmt.Sprintf("%x", sha256.Sum256(profileJSON))
+}
+
+func hyperShiftOptions(e *envapi.LLMWorkloadEnvironment) (string, envapi.HyperShiftSize, int32) {
+	profile, size, replicas := "default", envapi.HyperShiftSizeSmall, int32(1)
 	if e.Spec.HyperShift != nil {
 		if e.Spec.HyperShift.Profile != "" {
 			profile = e.Spec.HyperShift.Profile
+		}
+		if e.Spec.HyperShift.Size != "" {
+			size = e.Spec.HyperShift.Size
 		}
 		if e.Spec.HyperShift.Replicas != nil {
 			replicas = *e.Spec.HyperShift.Replicas
 		}
 	}
-	return profile, replicas
+	return profile, size, replicas
 }
 
 // Optional provider resources are read without cache-backed watches, allowing
@@ -58,7 +70,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if r.HyperShift == nil || !r.HyperShift.Enabled || !r.isOpenShift() {
 		return nil, false, fmt.Errorf("HyperShift provisioning is disabled or the host is not OpenShift")
 	}
-	name, replicas := hyperShiftOptions(e)
+	name, size, replicas := hyperShiftOptions(e)
 	p, ok := r.HyperShift.Profiles[name]
 	if !ok {
 		return nil, false, fmt.Errorf("HyperShift profile %q is not configured", name)
@@ -67,11 +79,14 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if err := p.validate(); err != nil {
 		return nil, false, err
 	}
+	_, ok = p.WorkerSizes[size]
+	if !ok {
+		return nil, false, fmt.Errorf("HyperShift size %q is not configured in profile %q", size, name)
+	}
 	if replicas < 1 || replicas > p.MaxReplicas {
 		return nil, false, fmt.Errorf("worker replicas must be between 1 and profile maximum %d", p.MaxReplicas)
 	}
-	profileJSON, _ := json.Marshal(p)
-	profileHash := fmt.Sprintf("%x", sha256.Sum256(profileJSON))
+	profileHash := hyperShiftProfileHash(p)
 	hc := hyperShiftObject(hostedClusterGVK, namespace, "cluster")
 	err := r.hyperShiftReader().Get(ctx, client.ObjectKeyFromObject(hc), hc)
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -283,6 +298,8 @@ func hyperShiftSubset(want, actual interface{}) bool {
 }
 
 func hyperShiftResources(e *envapi.LLMWorkloadEnvironment, namespace string, p HyperShiftProfile, replicas int32) (*unstructured.Unstructured, *unstructured.Unstructured) {
+	_, size, _ := hyperShiftOptions(e)
+	sizing := p.WorkerSizes[size]
 	id := sha256.Sum256([]byte(e.UID))
 	hc := hyperShiftObject(hostedClusterGVK, namespace, "cluster")
 	hc.SetAnnotations(environmentOwnershipAnnotations(e))
@@ -331,7 +348,7 @@ func hyperShiftResources(e *envapi.LLMWorkloadEnvironment, namespace string, p H
 		"release":    map[string]interface{}{"image": p.ReleaseImage},
 		"management": map[string]interface{}{"autoRepair": false, "upgradeType": "Replace"},
 		"platform": map[string]interface{}{"type": "KubeVirt", "kubevirt": map[string]interface{}{
-			"attachDefaultNetwork": true, "compute": map[string]interface{}{"cores": int64(p.WorkerCores), "memory": p.WorkerMemory},
+			"attachDefaultNetwork": true, "compute": map[string]interface{}{"cores": int64(sizing.Cores), "memory": sizing.Memory},
 			"networkInterfaceMultiqueue": "Enable", "nodeSelector": stringMap(p.WorkerNodeSelector),
 			"rootVolume": map[string]interface{}{"type": "Persistent", "cacheStrategy": map[string]interface{}{"type": "None"}, "persistent": map[string]interface{}{"accessModes": []interface{}{"ReadWriteOnce"}, "size": p.WorkerRootDisk, "storageClass": p.WorkerStorageClass, "volumeMode": "Block"}},
 		}},

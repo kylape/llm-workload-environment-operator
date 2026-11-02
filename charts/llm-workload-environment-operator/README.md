@@ -82,7 +82,7 @@ select API Routes and 16-core / 128Gi / 258Gi workers across the A100 pool.
 | Value | Meaning |
 | --- | --- |
 | `platform` | Empty, `coreweave`, or `openshift`; maps to `PLATFORM` |
-| `hypershift.enabled`, `hypershift.profiles` | Opt-in hosted OpenShift provisioning with administrator-managed profiles; see [setup](../../docs/hypershift.md) |
+| `hypershift.enabled`, `hypershift.profiles` | Opt-in hosted OpenShift provisioning with administrator-managed profiles and per-worker `workerSizes`; see [setup](../../docs/hypershift.md) |
 | `argocd.namespace` | Host Argo CD namespace for cluster Secrets; empty disables registration |
 | `kueue.admissionEnabled` | Main integration switch mapped to `KUEUE_ADMISSION_ENABLED`; defaults to `true` |
 | `kueue.admissionValidationEnabled` | Namespace admission check mapped to `KUEUE_ADMISSION_VALIDATION_ENABLED`; defaults to `true` |

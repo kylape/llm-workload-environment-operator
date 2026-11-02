@@ -10,6 +10,7 @@ spec:
   clusterQueue: inference-workspaces
   hypershift:
     profile: default
+    size: small
     replicas: 1
     imageDigestMirrorSet:
       imageDigestMirrors:
