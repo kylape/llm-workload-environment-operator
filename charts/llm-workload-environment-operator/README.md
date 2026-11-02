@@ -6,7 +6,10 @@ cluster: the CRD and ClusterRole names are cluster-wide and are referenced by
 the operator. The release namespace is configurable; the chart does not create
 or manage that Namespace itself.
 
-The default runtime image is pinned by digest. Chart version `0.4.0` packages
+The default runtime image is pinned by digest. PipelineRun
+`lwe-expiration-5e98ba9-bn82p` built revision `5e98ba9` and published image
+digest `sha256:f73ea2d93f7d63ff778837006dedb0dccd02c1d6fa44e211244338cc065b529d`.
+Chart version `0.4.0` packages
 LWE expiration, HyperShift mode, optional Kueue integration, and the existing
 Namespace and VCluster modes. It does not install HyperShift, OpenShift
 Virtualization, Kueue, Argo CD, or workload environments. HyperShift is disabled by default.
