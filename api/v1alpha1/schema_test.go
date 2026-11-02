@@ -55,6 +55,7 @@ func TestHyperShiftSchema(t *testing.T) {
 		{strings.Repeat("a", 51), LLMWorkloadEnvironmentSpec{Mode: EnvironmentModeHyperShift}, true},
 		{strings.Repeat("b", 52), LLMWorkloadEnvironmentSpec{Mode: EnvironmentModeHyperShift}, false},
 		{"wrong-mode", LLMWorkloadEnvironmentSpec{Mode: EnvironmentModeVCluster, HyperShift: &HyperShiftEnvironmentSpec{}}, false},
+		{"bad-size", LLMWorkloadEnvironmentSpec{Mode: EnvironmentModeHyperShift, HyperShift: &HyperShiftEnvironmentSpec{Size: "xlarge"}}, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			e := &LLMWorkloadEnvironment{ObjectMeta: metav1.ObjectMeta{Name: test.name, Namespace: "requests"}, Spec: test.spec}
@@ -68,7 +69,7 @@ func TestHyperShiftSchema(t *testing.T) {
 			if test.name == "default" && e.Spec.Mode != EnvironmentModeNamespace {
 				t.Fatal("legacy mode default changed")
 			}
-			if test.name == "hyper" && (e.Spec.HyperShift.Profile != "default" || e.Spec.HyperShift.Replicas == nil || *e.Spec.HyperShift.Replicas != 1) {
+			if test.name == "hyper" && (e.Spec.HyperShift.Profile != "default" || e.Spec.HyperShift.Size != HyperShiftSizeSmall || e.Spec.HyperShift.Replicas == nil || *e.Spec.HyperShift.Replicas != 1) {
 				t.Fatal("HyperShift defaults missing")
 			}
 			if e.Spec.Mode != EnvironmentModeHyperShift {
@@ -83,6 +84,11 @@ func TestHyperShiftSchema(t *testing.T) {
 			if err := c.Status().Update(ctx, e); err != nil {
 				t.Fatal(err)
 			}
+			e.Spec.HyperShift.Size = HyperShiftSizeMedium
+			if err := c.Update(ctx, e); err == nil {
+				t.Fatal("size mutation accepted")
+			}
+			e.Spec.HyperShift.Size = HyperShiftSizeSmall
 			e.Spec.HyperShift.Profile = "other"
 			if err := c.Update(ctx, e); err == nil {
 				t.Fatal("profile mutation accepted")
