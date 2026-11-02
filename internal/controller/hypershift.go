@@ -202,8 +202,12 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if err != nil {
 		return nil, false, nil
 	}
+	storageClassReady, err := ensureHyperShiftWorkerStorageClassDefault(ctx, config)
+	if err != nil {
+		return config, false, fmt.Errorf("ensure guest default StorageClass: %w", err)
+	}
 	actualReplicas, _, _ := unstructured.NestedInt64(np.Object, "status", "replicas")
-	ready := !scaling && hyperShiftCondition(hc, "Available") && hyperShiftCondition(hc, "ClusterVersionAvailable") &&
+	ready := storageClassReady && !scaling && hyperShiftCondition(hc, "Available") && hyperShiftCondition(hc, "ClusterVersionAvailable") &&
 		hyperShiftCondition(np, "Ready") && hyperShiftCondition(np, "AllNodesHealthy") &&
 		actualReplicas == int64(replicas) && readyWorkers >= replicas
 	return config, ready, nil
