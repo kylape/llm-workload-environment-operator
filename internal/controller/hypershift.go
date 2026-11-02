@@ -79,7 +79,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if err := p.validate(); err != nil {
 		return nil, false, err
 	}
-	workerSizing, ok := p.WorkerSizes[size]
+	_, ok = p.WorkerSizes[size]
 	if !ok {
 		return nil, false, fmt.Errorf("HyperShift size %q is not configured in profile %q", size, name)
 	}
@@ -114,7 +114,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if err := r.ensureHyperShiftImageDigestMirrorSetConfig(ctx, e, namespace); err != nil {
 		return nil, false, err
 	}
-	desiredHC, desiredNP := hyperShiftResources(e, namespace, p, workerSizing, replicas)
+	desiredHC, desiredNP := hyperShiftResources(e, namespace, p, replicas)
 	if apierrors.IsNotFound(err) {
 		hc = desiredHC
 		annotations := hc.GetAnnotations()
@@ -297,7 +297,9 @@ func hyperShiftSubset(want, actual interface{}) bool {
 	}
 }
 
-func hyperShiftResources(e *envapi.LLMWorkloadEnvironment, namespace string, p HyperShiftProfile, sizing HyperShiftWorkerSizing, replicas int32) (*unstructured.Unstructured, *unstructured.Unstructured) {
+func hyperShiftResources(e *envapi.LLMWorkloadEnvironment, namespace string, p HyperShiftProfile, replicas int32) (*unstructured.Unstructured, *unstructured.Unstructured) {
+	_, size, _ := hyperShiftOptions(e)
+	sizing := p.WorkerSizes[size]
 	id := sha256.Sum256([]byte(e.UID))
 	hc := hyperShiftObject(hostedClusterGVK, namespace, "cluster")
 	hc.SetAnnotations(environmentOwnershipAnnotations(e))
