@@ -27,6 +27,11 @@ type HyperShiftEnvironmentSpec struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	Profile string `json:"profile,omitempty"`
 
+	// Size selects the administrator-configured CPU and memory shape for each worker.
+	// +kubebuilder:default=small
+	// +kubebuilder:validation:Enum=small;medium;large
+	Size HyperShiftSize `json:"size,omitempty"`
+
 	// Replicas is the desired number of KubeVirt worker nodes, bounded by the profile.
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
@@ -37,6 +42,16 @@ type HyperShiftEnvironmentSpec struct {
 	// +optional
 	ImageDigestMirrorSet *ImageDigestMirrorSetSpec `json:"imageDigestMirrorSet,omitempty"`
 }
+
+// HyperShiftSize selects a coarse-grained worker size configured by the administrator.
+// +kubebuilder:validation:Enum=small;medium;large
+type HyperShiftSize string
+
+const (
+	HyperShiftSizeSmall  HyperShiftSize = "small"
+	HyperShiftSizeMedium HyperShiftSize = "medium"
+	HyperShiftSizeLarge  HyperShiftSize = "large"
+)
 
 // ImageDigestMirrorSetSpec contains the spec fields for an ImageDigestMirrorSet
 // delivered to the HyperShift worker NodePool.
@@ -80,6 +95,7 @@ const (
 
 // +kubebuilder:validation:XValidation:rule="!has(self.hypershift) || self.mode == 'HyperShift'",message="hypershift options require HyperShift mode"
 // +kubebuilder:validation:XValidation:rule="self.mode != 'HyperShift' || (has(self.hypershift) && has(self.hypershift.profile) ? self.hypershift.profile : 'default') == (has(oldSelf.hypershift) && has(oldSelf.hypershift.profile) ? oldSelf.hypershift.profile : 'default')",message="HyperShift profile is immutable"
+// +kubebuilder:validation:XValidation:rule="self.mode != 'HyperShift' || (has(self.hypershift) && has(self.hypershift.size) ? self.hypershift.size : 'small') == (has(oldSelf.hypershift) && has(oldSelf.hypershift.size) ? oldSelf.hypershift.size : 'small')",message="HyperShift size is immutable"
 type LLMWorkloadEnvironmentSpec struct {
 	// Mode selects a host namespace, vCluster, or hosted OpenShift cluster.
 	// +kubebuilder:default=Namespace
