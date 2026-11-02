@@ -42,16 +42,30 @@ hypershift:
         kubernetes.io/hostname: a100-03
       workerNodeSelector:
         node-role.kubernetes.io/a100-gpu: ""
-      workerCores: 16
-      workerMemory: 128Gi
+      workerSizes:
+        small:
+          cores: 16
+          memory: 128Gi
+        medium:
+          cores: 32
+          memory: 256Gi
+        large:
+          cores: 64
+          memory: 512Gi
       workerRootDisk: 258Gi
       maxReplicas: 10
       clusterNetwork: 10.244.0.0/16
       serviceNetwork: 172.29.0.0/16
 ```
 
-Defaults are one worker per request, 16 CPU / 128Gi memory / 258Gi root disk,
-8Gi etcd storage, a profile maximum of ten workers, and the guest CIDRs above.
+Each profile can configure the per-worker CPU and memory for `small`, `medium`,
+and `large`. The defaults are 16 CPU / 128Gi, 32 CPU / 256Gi, and 64 CPU /
+512Gi respectively. `workerRootDisk` remains profile-wide. A request selects one
+size and `replicas` determines how many workers use it; defaults are one `small`
+worker per request, 258Gi root disks, 8Gi etcd storage, a profile maximum of ten
+workers, and the guest CIDRs above. Existing profiles without `workerSizes` keep
+their configured `workerCores` and `workerMemory` for `small` and receive the
+standard `medium` and `large` sizes.
 Choose guest networks that do not overlap the management cluster's machine,
 pod, service or other routed networks. Guest pod networks need room for /23
 node subnets. Release images must be pinned by digest. The initial implementation
@@ -86,6 +100,7 @@ spec:
   clusterQueue: inference-workspaces
   hypershift:
     profile: default
+    size: small
     replicas: 1
     imageDigestMirrorSet:
       imageDigestMirrors:
@@ -114,7 +129,7 @@ fail, the worker does not fall back to the source registry. Updating this
 configuration changes the NodePool config reference and triggers a worker
 rollout.
 
-The mode and profile are immutable. `replicas` can be changed within the
+The mode, profile, and size are immutable. `replicas` can be changed within the
 profile limit. HyperShift environment names are limited to 51 characters so
 the generated control-plane namespace fits Kubernetes naming limits.
 
