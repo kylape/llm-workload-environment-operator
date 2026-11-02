@@ -59,6 +59,12 @@ uses amd64 workers, a single control-plane replica, local block storage, manual
 guest-to-host storage-class mapping (`worker-lvm`), and replacement upgrades.
 It does not offer high availability or VM live migration with local LVM.
 
+The HostedCluster storage mapping does not mark the guest class as default, so
+LWE enforces `storageclass.kubernetes.io/is-default-class: "true"` on
+`worker-lvm` in the guest cluster and clears that annotation from competing
+defaults. `Ready=True` waits until `worker-lvm` exists and is the only default;
+the guest kubeconfig remains available while this is being reconciled.
+
 For a manifest-based installation, set `HYPERSHIFT_CONFIG` on the manager to
 the JSON equivalent of `hypershift` in these values. Invalid profiles fail
 manager startup. Empty configuration disables HyperShift without requiring its
