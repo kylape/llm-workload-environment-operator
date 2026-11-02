@@ -222,6 +222,26 @@
                 "type": "string",
                 "minLength": 1
               },
+              "workerSizes": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "small",
+                  "medium",
+                  "large"
+                ],
+                "properties": {
+                  "small": {
+                    "$ref": "#/definitions/hypershiftWorkerSizing"
+                  },
+                  "medium": {
+                    "$ref": "#/definitions/hypershiftWorkerSizing"
+                  },
+                  "large": {
+                    "$ref": "#/definitions/hypershiftWorkerSizing"
+                  }
+                }
+              },
               "workerRootDisk": {
                 "type": "string",
                 "minLength": 1
@@ -351,6 +371,25 @@
             "type": "number"
           }
         ]
+      }
+    },
+    "hypershiftWorkerSizing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cores",
+        "memory"
+      ],
+      "properties": {
+        "cores": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "memory": {
+          "type": "string",
+          "minLength": 1
+        }
       }
     }
   }
