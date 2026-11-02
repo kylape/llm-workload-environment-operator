@@ -17,8 +17,8 @@ argocd:
 
 expiration:
   # Go time.Duration strings. Omitted LWE durations use minDuration.
-  minDuration: 1h
-  maxDuration: 720h
+  minDuration: 15m
+  maxDuration: 72h
 
 kueue:
   # Main integration switch: false permits provisioning without Kueue installed.

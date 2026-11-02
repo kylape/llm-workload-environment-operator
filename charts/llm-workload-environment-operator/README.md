@@ -87,7 +87,7 @@ select API Routes and 16-core / 128Gi / 258Gi workers across the A100 pool.
 | `platform` | Empty, `coreweave`, or `openshift`; maps to `PLATFORM` |
 | `hypershift.enabled`, `hypershift.profiles` | Opt-in hosted OpenShift provisioning with administrator-managed profiles and per-worker `workerSizes`; see [setup](../../docs/hypershift.md) |
 | `argocd.namespace` | Host Argo CD namespace for cluster Secrets; empty disables registration |
-| `expiration.minDuration`, `expiration.maxDuration` | Accepted Go duration bounds mapped to `LWE_MIN_DURATION` and `LWE_MAX_DURATION`; defaults are `1h` and `720h` |
+| `expiration.minDuration`, `expiration.maxDuration` | Accepted Go duration bounds mapped to `LWE_MIN_DURATION` and `LWE_MAX_DURATION`; defaults are `15m` and `72h` |
 | `kueue.admissionEnabled` | Main integration switch mapped to `KUEUE_ADMISSION_ENABLED`; defaults to `true` |
 | `kueue.admissionValidationEnabled` | Namespace admission check mapped to `KUEUE_ADMISSION_VALIDATION_ENABLED`; defaults to `true` |
 | `kueue.namespaceLabels` | String map serialized to JSON for `KUEUE_NAMESPACE_LABELS` |

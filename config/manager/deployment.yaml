@@ -33,9 +33,9 @@ spec:
               value: ""
             # Environment durations are Go time.Duration strings.
             - name: LWE_MIN_DURATION
-              value: 1h
+              value: 15m
             - name: LWE_MAX_DURATION
-              value: 720h
+              value: 72h
             # Optional hosted OpenShift provisioning; see docs/hypershift.md.
             - name: HYPERSHIFT_CONFIG
               value: '{"enabled":false,"profiles":{}}'

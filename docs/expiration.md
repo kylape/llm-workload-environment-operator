@@ -2,7 +2,7 @@
 
 Set `spec.duration` to a Go `time.Duration` string such as `5h30m`. If omitted,
 the operator uses its configured minimum duration. The default accepted range is
-`1h` through `720h`; operator administrators can change the bounds with
+`15m` through `72h`; operator administrators can change the bounds with
 `LWE_MIN_DURATION` and `LWE_MAX_DURATION` (or the Helm values
 `expiration.minDuration` and `expiration.maxDuration`). Both bounds must be
 positive Go duration strings, and the minimum cannot exceed the maximum.

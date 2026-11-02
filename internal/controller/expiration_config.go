@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	DefaultMinimumEnvironmentDuration = time.Hour
-	DefaultMaximumEnvironmentDuration = 30 * 24 * time.Hour
+	DefaultMinimumEnvironmentDuration = 15 * time.Minute
+	DefaultMaximumEnvironmentDuration = 72 * time.Hour
 	ExpirationReviewInterval          = time.Minute
 )
 
@@ -29,14 +29,14 @@ func ExpirationConfigFromEnv(getenv func(string) string) (ExpirationConfig, erro
 	if value := getenv("LWE_MIN_DURATION"); value != "" {
 		duration, err := time.ParseDuration(value)
 		if err != nil || duration <= 0 {
-			return ExpirationConfig{}, fmt.Errorf("LWE_MIN_DURATION must be a positive Go duration, for example 1h: %q", value)
+			return ExpirationConfig{}, fmt.Errorf("LWE_MIN_DURATION must be a positive Go duration, for example 15m: %q", value)
 		}
 		config.Minimum = duration
 	}
 	if value := getenv("LWE_MAX_DURATION"); value != "" {
 		duration, err := time.ParseDuration(value)
 		if err != nil || duration <= 0 {
-			return ExpirationConfig{}, fmt.Errorf("LWE_MAX_DURATION must be a positive Go duration, for example 720h: %q", value)
+			return ExpirationConfig{}, fmt.Errorf("LWE_MAX_DURATION must be a positive Go duration, for example 72h: %q", value)
 		}
 		config.Maximum = duration
 	}
