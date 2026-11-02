@@ -163,11 +163,17 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
 		config, ready, err := r.ensureHyperShift(ctx, environment, namespaceName)
 		if err != nil {
+			if len(config) != 0 {
+				if statusErr := r.setReady(ctx, environment, namespaceName, config, metav1.ConditionFalse, "HyperShiftProvisioningFailed", err.Error()); statusErr != nil {
+					return ctrl.Result{}, statusErr
+				}
+				return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+			}
 			return r.notReady(ctx, environment, namespaceName, "HyperShiftProvisioningFailed", err.Error(), 30*time.Second, nil)
 		}
 		if !ready {
 			if len(config) != 0 {
-				if err := r.setReady(ctx, environment, namespaceName, config, metav1.ConditionFalse, "HyperShiftNotReady", "Guest API is accessible; workers or OpenShift installation are still starting"); err != nil {
+				if err := r.setReady(ctx, environment, namespaceName, config, metav1.ConditionFalse, "HyperShiftNotReady", "Guest API is accessible; workers, OpenShift installation, or worker-lvm StorageClass are still being reconciled"); err != nil {
 					return ctrl.Result{}, err
 				}
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
