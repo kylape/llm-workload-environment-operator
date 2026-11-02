@@ -291,7 +291,21 @@ func TestHyperShiftProfileConfiguration(t *testing.T) {
 			}
 		})
 	}
-	for _, change := range []func(*HyperShiftProfile){func(p *HyperShiftProfile) { p.ReleaseImage = "release:latest" }, func(p *HyperShiftProfile) { p.APIServerAddress = "127.0.0.1" }, func(p *HyperShiftProfile) { p.APIServerAddress = "api.example.com:6443" }, func(p *HyperShiftProfile) { p.PullSecret.Name = "" }, func(p *HyperShiftProfile) { p.WorkerRootDisk = "0" }, func(p *HyperShiftProfile) { p.ServiceNetwork = p.ClusterNetwork }, func(p *HyperShiftProfile) { p.ClusterNetwork = "10.244.0.0/24" }} {
+	for _, change := range []func(*HyperShiftProfile){
+		func(p *HyperShiftProfile) { p.ReleaseImage = "release:latest" },
+		func(p *HyperShiftProfile) { p.APIServerAddress = "127.0.0.1" },
+		func(p *HyperShiftProfile) { p.APIServerAddress = "api.example.com:6443" },
+		func(p *HyperShiftProfile) { p.PullSecret.Name = "" },
+		func(p *HyperShiftProfile) { p.WorkerRootDisk = "0" },
+		func(p *HyperShiftProfile) { p.ServiceNetwork = p.ClusterNetwork },
+		func(p *HyperShiftProfile) { p.ClusterNetwork = "10.244.0.0/24" },
+		func(p *HyperShiftProfile) { delete(p.WorkerSizes, envapi.HyperShiftSizeMedium) },
+		func(p *HyperShiftProfile) {
+			sizing := p.WorkerSizes[envapi.HyperShiftSizeSmall]
+			sizing.Cores = 0
+			p.WorkerSizes[envapi.HyperShiftSizeSmall] = sizing
+		},
+	} {
 		bad := p
 		change(&bad)
 		if bad.validate() == nil {
@@ -377,9 +391,9 @@ func TestHyperShiftDisabledNeverPublishesHostCredentials(t *testing.T) {
 func TestHyperShiftIngressDomainsAreUnique(t *testing.T) {
 	p := hyperShiftTestProfile()
 	e := &envapi.LLMWorkloadEnvironment{ObjectMeta: metav1.ObjectMeta{Name: strings.Repeat("a", 51), UID: "first"}}
-	first, _ := hyperShiftResources(e, "env-first", p, 1)
+	first, _ := hyperShiftResources(e, "env-first", p, p.WorkerSizes[envapi.HyperShiftSizeSmall], 1)
 	e.UID = "second"
-	second, _ := hyperShiftResources(e, "env-second", p, 1)
+	second, _ := hyperShiftResources(e, "env-second", p, p.WorkerSizes[envapi.HyperShiftSizeSmall], 1)
 	a, _, _ := unstructured.NestedString(first.Object, "spec", "dns", "baseDomain")
 	b, _, _ := unstructured.NestedString(second.Object, "spec", "dns", "baseDomain")
 	if _, exists, _ := unstructured.NestedString(first.Object, "spec", "dns", "baseDomainPrefix"); exists {
@@ -387,6 +401,29 @@ func TestHyperShiftIngressDomainsAreUnique(t *testing.T) {
 	}
 	if a == b || strings.Split(a, ".")[0] == strings.Split(b, ".")[0] || len(strings.Split(a, ".")[0]) > 63 {
 		t.Fatalf("invalid or colliding ingress prefixes: %q %q", a, b)
+	}
+}
+
+func TestHyperShiftWorkerSizes(t *testing.T) {
+	p := hyperShiftTestProfile()
+	for _, test := range []struct {
+		size   envapi.HyperShiftSize
+		cores  int64
+		memory string
+	}{
+		{envapi.HyperShiftSizeSmall, 16, "128Gi"},
+		{envapi.HyperShiftSizeMedium, 32, "256Gi"},
+		{envapi.HyperShiftSizeLarge, 64, "512Gi"},
+	} {
+		t.Run(string(test.size), func(t *testing.T) {
+			e := &envapi.LLMWorkloadEnvironment{ObjectMeta: metav1.ObjectMeta{Name: "test", UID: "worker-size"}}
+			_, np := hyperShiftResources(e, "env-test", p, p.WorkerSizes[test.size], 1)
+			cores, _, _ := unstructured.NestedInt64(np.Object, "spec", "platform", "kubevirt", "compute", "cores")
+			memory, _, _ := unstructured.NestedString(np.Object, "spec", "platform", "kubevirt", "compute", "memory")
+			if cores != test.cores || memory != test.memory {
+				t.Fatalf("worker sizing = %d cores, %s memory; want %d cores, %s memory", cores, memory, test.cores, test.memory)
+			}
+		})
 	}
 }
 
@@ -399,7 +436,7 @@ func TestHyperShiftAPIIngressAndWorkerSizing(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := &envapi.LLMWorkloadEnvironment{ObjectMeta: metav1.ObjectMeta{Name: "test", UID: "first"}}
-	hc, np := hyperShiftResources(e, "env-test", p, 1)
+	hc, np := hyperShiftResources(e, "env-test", p, p.WorkerSizes[envapi.HyperShiftSizeSmall], 1)
 	services, _, _ := unstructured.NestedSlice(hc.Object, "spec", "services")
 	strategy := services[0].(map[string]interface{})["servicePublishingStrategy"].(map[string]interface{})
 	if strategy["type"] != "Route" || strategy["nodePort"] != nil {
@@ -410,7 +447,7 @@ func TestHyperShiftAPIIngressAndWorkerSizing(t *testing.T) {
 		t.Fatalf("invalid API ingress hostname: %s", host)
 	}
 	e.UID = "second"
-	other, _ := hyperShiftResources(e, "env-other", p, 1)
+	other, _ := hyperShiftResources(e, "env-other", p, p.WorkerSizes[envapi.HyperShiftSizeSmall], 1)
 	otherServices, _, _ := unstructured.NestedSlice(other.Object, "spec", "services")
 	otherStrategy := otherServices[0].(map[string]interface{})["servicePublishingStrategy"].(map[string]interface{})
 	if host == otherStrategy["route"].(map[string]interface{})["hostname"] {
