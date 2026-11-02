@@ -21,23 +21,30 @@ type HyperShiftConfig struct {
 }
 
 type HyperShiftProfile struct {
-	ReleaseImage                string                  `json:"releaseImage"`
-	PullSecret                  corev1.SecretReference  `json:"pullSecret"`
-	SSHKey                      *corev1.SecretReference `json:"sshKey,omitempty"`
-	BaseDomain                  string                  `json:"baseDomain"`
-	APIServerAddress            string                  `json:"apiServerAddress"`
-	APIServerPublishingStrategy string                  `json:"apiServerPublishingStrategy,omitempty"`
-	EtcdStorageClass            string                  `json:"etcdStorageClass"`
-	EtcdStorageSize             string                  `json:"etcdStorageSize,omitempty"`
-	WorkerStorageClass          string                  `json:"workerStorageClass"`
-	WorkerCores                 int32                   `json:"workerCores,omitempty"`
-	WorkerMemory                string                  `json:"workerMemory,omitempty"`
-	WorkerRootDisk              string                  `json:"workerRootDisk,omitempty"`
-	MaxReplicas                 int32                   `json:"maxReplicas,omitempty"`
-	ControlPlaneNodeSelector    map[string]string       `json:"controlPlaneNodeSelector,omitempty"`
-	WorkerNodeSelector          map[string]string       `json:"workerNodeSelector,omitempty"`
-	ClusterNetwork              string                  `json:"clusterNetwork,omitempty"`
-	ServiceNetwork              string                  `json:"serviceNetwork,omitempty"`
+	ReleaseImage                string                                           `json:"releaseImage"`
+	PullSecret                  corev1.SecretReference                           `json:"pullSecret"`
+	SSHKey                      *corev1.SecretReference                          `json:"sshKey,omitempty"`
+	BaseDomain                  string                                           `json:"baseDomain"`
+	APIServerAddress            string                                           `json:"apiServerAddress"`
+	APIServerPublishingStrategy string                                           `json:"apiServerPublishingStrategy,omitempty"`
+	EtcdStorageClass            string                                           `json:"etcdStorageClass"`
+	EtcdStorageSize             string                                           `json:"etcdStorageSize,omitempty"`
+	WorkerStorageClass          string                                           `json:"workerStorageClass"`
+	WorkerCores                 int32                                            `json:"workerCores,omitempty"`
+	WorkerMemory                string                                           `json:"workerMemory,omitempty"`
+	WorkerSizes                 map[envapi.HyperShiftSize]HyperShiftWorkerSizing `json:"workerSizes,omitempty"`
+	WorkerRootDisk              string                                           `json:"workerRootDisk,omitempty"`
+	MaxReplicas                 int32                                            `json:"maxReplicas,omitempty"`
+	ControlPlaneNodeSelector    map[string]string                                `json:"controlPlaneNodeSelector,omitempty"`
+	WorkerNodeSelector          map[string]string                                `json:"workerNodeSelector,omitempty"`
+	ClusterNetwork              string                                           `json:"clusterNetwork,omitempty"`
+	ServiceNetwork              string                                           `json:"serviceNetwork,omitempty"`
+}
+
+// HyperShiftWorkerSizing is an administrator-approved per-worker CPU and memory shape.
+type HyperShiftWorkerSizing struct {
+	Cores  int32  `json:"cores"`
+	Memory string `json:"memory"`
 }
 
 func HyperShiftConfigFromEnv(getenv func(string) string) (*HyperShiftConfig, error) {
@@ -77,6 +84,13 @@ func (p *HyperShiftProfile) defaults() {
 	}
 	if p.WorkerMemory == "" {
 		p.WorkerMemory = "128Gi"
+	}
+	if len(p.WorkerSizes) == 0 {
+		p.WorkerSizes = map[envapi.HyperShiftSize]HyperShiftWorkerSizing{
+			envapi.HyperShiftSizeSmall:  {Cores: p.WorkerCores, Memory: p.WorkerMemory},
+			envapi.HyperShiftSizeMedium: {Cores: 32, Memory: "256Gi"},
+			envapi.HyperShiftSizeLarge:  {Cores: 64, Memory: "512Gi"},
+		}
 	}
 	if p.WorkerRootDisk == "" {
 		p.WorkerRootDisk = "258Gi"
@@ -129,6 +143,22 @@ func (p HyperShiftProfile) validate() error {
 	}
 	if p.WorkerCores < 1 || p.WorkerCores > 256 || p.MaxReplicas < 1 || p.MaxReplicas > 100 {
 		return fmt.Errorf("workerCores must be 1..256 and maxReplicas 1..100")
+	}
+	for _, size := range []envapi.HyperShiftSize{envapi.HyperShiftSizeSmall, envapi.HyperShiftSizeMedium, envapi.HyperShiftSizeLarge} {
+		worker, ok := p.WorkerSizes[size]
+		if !ok {
+			return fmt.Errorf("workerSizes must configure small, medium and large")
+		}
+		if worker.Cores < 1 || worker.Cores > 256 {
+			return fmt.Errorf("workerSizes.%s.cores must be 1..256", size)
+		}
+		memory, err := resource.ParseQuantity(worker.Memory)
+		if err != nil || memory.Sign() <= 0 {
+			return fmt.Errorf("workerSizes.%s.memory must be a positive quantity", size)
+		}
+	}
+	if len(p.WorkerSizes) != 3 {
+		return fmt.Errorf("workerSizes may only configure small, medium and large")
 	}
 	for _, selector := range []map[string]string{p.ControlPlaneNodeSelector, p.WorkerNodeSelector} {
 		for k, v := range selector {
