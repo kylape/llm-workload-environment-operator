@@ -11,8 +11,16 @@ hypershift:
       baseDomain: apps.openshift.nm.rdu4.corp.redhat.com
       etcdStorageClass: lvms-a100-tier1-storage
       workerStorageClass: lvms-a100-tier1-storage
-      workerCores: 16
-      workerMemory: 128Gi
+      workerSizes:
+        small:
+          cores: 16
+          memory: 128Gi
+        medium:
+          cores: 32
+          memory: 256Gi
+        large:
+          cores: 64
+          memory: 512Gi
       workerRootDisk: 258Gi
       maxReplicas: 10
       controlPlaneNodeSelector:
