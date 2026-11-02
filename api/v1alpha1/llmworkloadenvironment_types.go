@@ -44,7 +44,6 @@ type HyperShiftEnvironmentSpec struct {
 }
 
 // HyperShiftSize selects a coarse-grained worker size configured by the administrator.
-// +kubebuilder:validation:Enum=small;medium;large
 type HyperShiftSize string
 
 const (
