@@ -127,6 +127,15 @@ spec:
                     maximum: 100
                     minimum: 1
                     type: integer
+                  size:
+                    default: small
+                    description: Size selects the administrator-configured CPU and
+                      memory shape for each worker.
+                    enum:
+                    - small
+                    - medium
+                    - large
+                    type: string
                 type: object
               mode:
                 default: Namespace
@@ -149,6 +158,10 @@ spec:
                 ? self.hypershift.profile : ''default'') == (has(oldSelf.hypershift)
                 && has(oldSelf.hypershift.profile) ? oldSelf.hypershift.profile :
                 ''default'')'
+            - message: HyperShift size is immutable
+              rule: 'self.mode != ''HyperShift'' || (has(self.hypershift) && has(self.hypershift.size)
+                ? self.hypershift.size : ''small'') == (has(oldSelf.hypershift) &&
+                has(oldSelf.hypershift.size) ? oldSelf.hypershift.size : ''small'')'
           status:
             properties:
               argoCDClusterSecretRef:
