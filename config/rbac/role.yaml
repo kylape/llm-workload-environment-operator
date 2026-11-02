@@ -186,3 +186,30 @@ rules:
       - patch
       - update
       - watch
+  - apiGroups:
+      - hypershift.openshift.io
+    resources:
+      - hostedclusters
+      - nodepools
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - cert-manager.io
+    resources:
+      - certificates
+      - issuers
+    verbs:
+      - get
+      - create
+  - apiGroups:
+      - hypershift.openshift.io
+    resources:
+      - hostedcontrolplanes
+    verbs:
+      - get

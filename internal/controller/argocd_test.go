@@ -496,3 +496,22 @@ func TestArgoCDRefusesSecretCreationWhenCRDPrunesReference(t *testing.T) {
 		t.Fatal("an old CRD must not allow creation of credentials without durable cleanup intent")
 	}
 }
+
+func TestHyperShiftArgoCDRegistration(t *testing.T) {
+	ctx := context.Background()
+	e := newArgoCDTestEnvironment(t)
+	e.Spec.Mode = environmentv1alpha1.EnvironmentModeHyperShift
+	c := argoCDTestClient(t, e)
+	r := &LLMWorkloadEnvironmentReconciler{Client: c, APIReader: c, ArgoCDNamespace: "argocd"}
+	e = loadArgoCDTestEnvironment(t, c, e)
+	if err := r.reconcileArgoCDRegistration(ctx, e, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	e = loadArgoCDTestEnvironment(t, c, e)
+	if !apimeta.IsStatusConditionTrue(e.Status.Conditions, environmentv1alpha1.ArgoCDRegisteredCondition) || e.Status.ArgoCDClusterSecretRef == nil {
+		t.Fatal("ready HyperShift environment was not registered")
+	}
+	if err := r.finalizeArgoCDRegistration(ctx, e); err != nil && err != errArgoCDCleanupPending {
+		t.Fatal(err)
+	}
+}

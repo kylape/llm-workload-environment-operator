@@ -39,6 +39,8 @@ spec:
               value: {{ .Values.kueue.admissionValidationEnabled | toString | quote }}
             - name: KUEUE_NAMESPACE_LABELS
               value: {{ .Values.kueue.namespaceLabels | toJson | quote }}
+            - name: HYPERSHIFT_CONFIG
+              value: {{ .Values.hypershift | toJson | quote }}
             - name: KUEUE_CONFIG_REF
               value: {{ .Values.kueue.configRef | quote }}
           ports:

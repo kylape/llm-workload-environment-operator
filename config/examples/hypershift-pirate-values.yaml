@@ -1,0 +1,32 @@
+# Host-specific administrator values; referenced Secrets must already exist.
+platform: openshift
+hypershift:
+  enabled: true
+  profiles:
+    default: &nodePortProfile
+      releaseImage: quay.io/openshift-release-dev/ocp-release@sha256:4ebbe67679969175b6be1626a64eeab44191117abba298e43742d72b26bf2ecd
+      pullSecret:
+        namespace: llm-workload-environment-operator
+        name: hypershift-pull-secret
+      baseDomain: apps.openshift.nm.rdu4.corp.redhat.com
+      etcdStorageClass: lvms-a100-tier1-storage
+      workerStorageClass: lvms-a100-tier1-storage
+      workerCores: 16
+      workerMemory: 128Gi
+      workerRootDisk: 258Gi
+      maxReplicas: 10
+      controlPlaneNodeSelector:
+        kubernetes.io/hostname: a100-03
+      workerNodeSelector:
+        node-role.kubernetes.io/a100-gpu: ''
+      apiServerPublishingStrategy: NodePort
+      apiServerAddress: 10.14.217.16
+    shared-ingress:
+      <<: *nodePortProfile
+      apiServerPublishingStrategy: SharedIngress
+kueue:
+  admissionEnabled: false
+  namespaceLabels:
+    kueue.openshift.io/managed: 'true'
+    inference.redhat.com/workspace: lwe
+  configRef: openshift-kueue-operator:kueue-manager-config:controller_manager_config.yaml

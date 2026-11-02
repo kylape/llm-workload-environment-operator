@@ -152,6 +152,36 @@ class HelmChartTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("schema", result.stderr)
 
+    def test_hypershift_profiles_are_serialized_and_validated(self):
+        self.assertEqual(json.loads(environment(resources())["HYPERSHIFT_CONFIG"]),
+                         {"enabled": False, "profiles": {}})
+        profile = {"releaseImage": "quay.io/example/release@sha256:" + "a" * 64,
+                   "pullSecret": {"namespace": "operator", "name": "pull"},
+                   "baseDomain": "apps.example.com", "apiServerAddress": "192.0.2.10",
+                   "etcdStorageClass": "lvm", "workerStorageClass": "lvm",
+                   "workerCores": 4, "workerMemory": "16Gi", "maxReplicas": 3}
+        config = {"enabled": True, "profiles": {"default": profile}}
+        self.assertEqual(json.loads(environment(resources({"hypershift": config}))["HYPERSHIFT_CONFIG"]), config)
+        shared_profile = dict(profile, apiServerPublishingStrategy="SharedIngress")
+        shared = {"enabled": True, "profiles": {"default": shared_profile}}
+        self.assertEqual(json.loads(environment(resources({"hypershift": shared}))["HYPERSHIFT_CONFIG"]), shared)
+        missing_worker_address = dict(shared_profile)
+        del missing_worker_address["apiServerAddress"]
+        self.assertNotEqual(render({"hypershift": {"profiles": {"default": missing_worker_address}}}).returncode, 0)
+        routed_profile = dict(profile, apiServerPublishingStrategy="Route")
+        del routed_profile["apiServerAddress"]
+        routed = {"enabled": True, "profiles": {"default": routed_profile}}
+        self.assertEqual(json.loads(environment(resources({"hypershift": routed}))["HYPERSHIFT_CONFIG"]), routed)
+        self.assertNotEqual(render({"hypershift": {"profiles": {"default": dict(routed_profile, apiServerPublishingStrategy="NodePort")}}}).returncode, 0)
+        self.assertNotEqual(render({"hypershift": {"profiles": {"default": dict(profile, apiServerPublishingStrategy="LoadBalancer")}}}).returncode, 0)
+        for invalid in ({"enabled": "true"}, {"enabled": True},
+                        {"profiles": {"bad_name": profile}},
+                        {"profiles": {"default": dict(profile, releaseImage="release:latest")}},
+                        {"profiles": {"default": dict(profile, workerCores=0)}},
+                        {"profiles": {"default": dict(profile, secretData="secret")}}):
+            with self.subTest(invalid=invalid):
+                self.assertNotEqual(render({"hypershift": invalid}).returncode, 0)
+
     def test_packaged_chart_is_self_contained(self):
         with tempfile.TemporaryDirectory() as directory:
             subprocess.run(["helm", "package", str(CHART), "--destination", directory],
