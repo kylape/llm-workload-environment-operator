@@ -406,6 +406,11 @@ func TestHyperShiftIngressDomainsAreUnique(t *testing.T) {
 
 func TestHyperShiftWorkerSizes(t *testing.T) {
 	p := hyperShiftTestProfile()
+	legacyProfile := p
+	legacyProfile.WorkerSizes = nil
+	if hyperShiftProfileHash(p) != hyperShiftProfileHash(legacyProfile) {
+		t.Fatal("default worker size map changed the existing HyperShift profile identity")
+	}
 	for _, test := range []struct {
 		size   envapi.HyperShiftSize
 		cores  int64
@@ -416,8 +421,9 @@ func TestHyperShiftWorkerSizes(t *testing.T) {
 		{envapi.HyperShiftSizeLarge, 64, "512Gi"},
 	} {
 		t.Run(string(test.size), func(t *testing.T) {
-			e := &envapi.LLMWorkloadEnvironment{ObjectMeta: metav1.ObjectMeta{Name: "test", UID: "worker-size"}}
-			_, np := hyperShiftResources(e, "env-test", p, p.WorkerSizes[test.size], 1)
+			e := &envapi.LLMWorkloadEnvironment{ObjectMeta: metav1.ObjectMeta{Name: "test", UID: "worker-size"}, Spec: envapi.LLMWorkloadEnvironmentSpec{HyperShift: &envapi.HyperShiftEnvironmentSpec{Size: test.size}}}
+			_, selectedSize, _ := hyperShiftOptions(e)
+			_, np := hyperShiftResources(e, "env-test", p, p.WorkerSizes[selectedSize], 1)
 			cores, _, _ := unstructured.NestedInt64(np.Object, "spec", "platform", "kubevirt", "compute", "cores")
 			memory, _, _ := unstructured.NestedString(np.Object, "spec", "platform", "kubevirt", "compute", "memory")
 			if cores != test.cores || memory != test.memory {
