@@ -3,9 +3,9 @@ platform: ""
 
 image:
   repository: quay.io/klape/llm-workload-environment-operator
-  tag: expiration-15m-9964ef8
+  tag: hypershift-pullsecret-c3ffc44
   # A nonempty digest takes precedence over tag.
-  digest: sha256:15179508edd3edf14a98eab8f78343ef9be0ae455c0d7645fc649562fe0c5e50
+  digest: sha256:d6ba11873e62ba9d6820aafc8baaff0c5ebdf8b544a968260e05d6db5aa2e1ed
   pullPolicy: IfNotPresent
 
 replicaCount: 1
