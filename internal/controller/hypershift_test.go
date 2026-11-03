@@ -207,6 +207,30 @@ func TestHyperShiftLifecycle(t *testing.T) {
 	}
 }
 
+func TestHyperShiftUsesLWEPullSecretOverride(t *testing.T) {
+	ctx := context.Background()
+	r, e := hyperShiftFixture(t)
+	secretData := []byte(`{"auths":{"tenant.example.com":{"auth":"tenant-token"}}}`)
+	if err := r.Create(ctx, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "tenant-pull", Namespace: e.Namespace},
+		Type:       corev1.SecretTypeDockerConfigJson,
+		Data:       map[string][]byte{corev1.DockerConfigJsonKey: secretData},
+	}); err != nil {
+		t.Fatalf("create tenant pull Secret: %v", err)
+	}
+	e.Spec.HyperShift = &envapi.HyperShiftEnvironmentSpec{PullSecret: &corev1.LocalObjectReference{Name: "tenant-pull"}}
+	if _, _, err := r.ensureHyperShift(ctx, e, "env-test"); err != nil {
+		t.Fatalf("reconcile HyperShift with LWE pull Secret: %v", err)
+	}
+	actual := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: "env-test", Name: "hypershift-pull-secret"}, actual); err != nil {
+		t.Fatalf("get HostedCluster pull Secret: %v", err)
+	}
+	if string(actual.Data[corev1.DockerConfigJsonKey]) != string(secretData) {
+		t.Fatalf("HostedCluster pull Secret came from the profile instead of the LWE: %s", actual.Data[corev1.DockerConfigJsonKey])
+	}
+}
+
 func boolString(value bool) string {
 	if value {
 		return "true"

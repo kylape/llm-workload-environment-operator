@@ -10,8 +10,9 @@ The default runtime image is pinned by digest. PipelineRun
 `lwe-expiration-15m-9964ef8-789pd` built revision `9964ef8` and published
 image digest
 `sha256:15179508edd3edf14a98eab8f78343ef9be0ae455c0d7645fc649562fe0c5e50`.
-Chart version `0.4.1` packages
-LWE expiration, HyperShift mode, optional Kueue integration, and the existing
+Chart version `0.4.2` packages
+LWE expiration, the per-LWE HostedCluster pull-secret override, HyperShift
+mode, optional Kueue integration, and the existing
 Namespace and VCluster modes. It does not install HyperShift, OpenShift
 Virtualization, Kueue, Argo CD, or workload environments. HyperShift is disabled by default.
 The image retains the pinned vCluster chart and scheduling-gate preservation fix.

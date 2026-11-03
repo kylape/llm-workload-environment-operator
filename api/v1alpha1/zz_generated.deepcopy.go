@@ -18,6 +18,11 @@ func (in *HyperShiftEnvironmentSpec) DeepCopyInto(out *HyperShiftEnvironmentSpec
 		*out = new(int32)
 		**out = **in
 	}
+	if in.PullSecret != nil {
+		in, out := &in.PullSecret, &out.PullSecret
+		*out = new(v1.LocalObjectReference)
+		**out = **in
+	}
 	if in.ImageDigestMirrorSet != nil {
 		in, out := &in.ImageDigestMirrorSet, &out.ImageDigestMirrorSet
 		*out = new(ImageDigestMirrorSetSpec)

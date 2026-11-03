@@ -64,6 +64,13 @@ func hyperShiftOptions(e *envapi.LLMWorkloadEnvironment) (string, envapi.HyperSh
 	return profile, size, replicas
 }
 
+func hyperShiftPullSecretReference(e *envapi.LLMWorkloadEnvironment, profile HyperShiftProfile) corev1.SecretReference {
+	if e.Spec.HyperShift != nil && e.Spec.HyperShift.PullSecret != nil {
+		return corev1.SecretReference{Namespace: e.Namespace, Name: e.Spec.HyperShift.PullSecret.Name}
+	}
+	return profile.PullSecret
+}
+
 // Optional provider resources are read without cache-backed watches, allowing
 // Namespace and VCluster mode to run where HyperShift CRDs are not installed.
 func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context, e *envapi.LLMWorkloadEnvironment, namespace string) ([]byte, bool, error) {
@@ -368,15 +375,16 @@ func stringMap(values map[string]string) map[string]interface{} {
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShiftCredentials(ctx context.Context, e *envapi.LLMWorkloadEnvironment, ns string, p HyperShiftProfile, creating bool) error {
+	pullSecretRef := hyperShiftPullSecretReference(e, p)
 	source := &corev1.Secret{}
-	if err := r.hyperShiftReader().Get(ctx, types.NamespacedName{Namespace: p.PullSecret.Namespace, Name: p.PullSecret.Name}, source); err != nil {
+	if err := r.hyperShiftReader().Get(ctx, types.NamespacedName{Namespace: pullSecretRef.Namespace, Name: pullSecretRef.Name}, source); err != nil {
 		return err
 	}
 	var auth struct {
 		Auths map[string]json.RawMessage `json:"auths"`
 	}
 	if json.Unmarshal(source.Data[corev1.DockerConfigJsonKey], &auth) != nil || len(auth.Auths) == 0 {
-		return fmt.Errorf("profile pull Secret must contain a nonempty .dockerconfigjson auths map")
+		return fmt.Errorf("HostedCluster pull Secret must contain a nonempty .dockerconfigjson auths map")
 	}
 	if err := r.ensureHyperShiftSecret(ctx, e, ns, "hypershift-pull-secret", corev1.SecretTypeDockerConfigJson, map[string][]byte{corev1.DockerConfigJsonKey: source.Data[corev1.DockerConfigJsonKey]}, false); err != nil {
 		return err

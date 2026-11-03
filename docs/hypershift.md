@@ -21,6 +21,15 @@ contain the OpenShift pull secret as `.dockerconfigjson`. Reference this Secret
 from a profile; never put credentials in Helm values or environment requests.
 An optional SSH Secret contains the public key under `id_rsa.pub`.
 
+An LWE may optionally set `spec.hypershift.pullSecret.name` to a Docker config
+Secret in the same namespace as the LWE. The Secret must contain a nonempty
+`.dockerconfigjson` `auths` map. When set, this Secret supplies the
+HostedCluster's global pull secret instead of the administrator profile's
+`pullSecret`; the operator copies its data to the HostedCluster namespace under
+its managed Secret name. When omitted, the profile Secret remains the source.
+This lets a request use registry credentials without placing credential data in
+the LWE manifest.
+
 Example Helm values for the validated lab configuration:
 
 ```yaml
