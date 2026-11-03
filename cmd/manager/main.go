@@ -64,6 +64,11 @@ func main() {
 		ctrl.Log.Error(err, "invalid HyperShift configuration")
 		os.Exit(1)
 	}
+	expiration, err := environmentcontroller.ExpirationConfigFromEnv(os.Getenv)
+	if err != nil {
+		ctrl.Log.Error(err, "invalid LWE expiration configuration")
+		os.Exit(1)
+	}
 
 	config := ctrl.GetConfigOrDie()
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
@@ -117,8 +122,15 @@ func main() {
 		ArgoCDNamespace:   argoCDNamespace,
 		KueueAdmission:    &kueueAdmission,
 		HyperShift:        hyperShift,
+		Expiration:        &expiration,
 	}).SetupWithManager(manager); err != nil {
 		ctrl.Log.Error(err, "unable to create controller")
+		os.Exit(1)
+	}
+	if err := manager.Add(&environmentcontroller.ExpirationMonitor{
+		Client: manager.GetClient(), APIReader: manager.GetAPIReader(),
+	}); err != nil {
+		ctrl.Log.Error(err, "unable to configure LWE expiration monitor")
 		os.Exit(1)
 	}
 	if err := manager.AddHealthzCheck("healthz", healthz.Ping); err != nil {

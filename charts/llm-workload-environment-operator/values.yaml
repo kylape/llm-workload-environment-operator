@@ -3,9 +3,9 @@ platform: ""
 
 image:
   repository: quay.io/klape/llm-workload-environment-operator
-  tag: git-cf7ac84
+  tag: expiration-15m-9964ef8
   # A nonempty digest takes precedence over tag.
-  digest: sha256:5df093dd5a216ed5ab6184a296b4e32836e7d88d836945f4dec2e1dad8f70e26
+  digest: sha256:15179508edd3edf14a98eab8f78343ef9be0ae455c0d7645fc649562fe0c5e50
   pullPolicy: IfNotPresent
 
 replicaCount: 1
@@ -14,6 +14,11 @@ imagePullSecrets: []
 argocd:
   # Empty disables registration. This chart does not install Argo CD.
   namespace: ""
+
+expiration:
+  # Go time.Duration strings. Omitted LWE durations use minDuration.
+  minDuration: 15m
+  maxDuration: 72h
 
 kueue:
   # Main integration switch: false permits provisioning without Kueue installed.

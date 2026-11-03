@@ -33,6 +33,10 @@ spec:
               value: {{ .Values.platform | quote }}
             - name: ARGOCD_NAMESPACE
               value: {{ .Values.argocd.namespace | quote }}
+            - name: LWE_MIN_DURATION
+              value: {{ .Values.expiration.minDuration | quote }}
+            - name: LWE_MAX_DURATION
+              value: {{ .Values.expiration.maxDuration | quote }}
             - name: KUEUE_ADMISSION_ENABLED
               value: {{ .Values.kueue.admissionEnabled | toString | quote }}
             - name: KUEUE_ADMISSION_VALIDATION_ENABLED

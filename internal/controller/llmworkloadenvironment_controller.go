@@ -32,6 +32,7 @@ const (
 	NamespacePrefix                       = "env-"
 	EnvironmentOwnerAnnotation            = "llm.redhat.com/environment-owner"
 	EnvironmentUIDAnnotation              = "llm.redhat.com/environment-uid"
+	ExpirationExemptAnnotation            = "llm.redhat.com/expiration-exempt"
 	AllowedClusterQueuesAnnotation        = "llm.redhat.com/allowed-cluster-queues"
 	AccessBindingName                     = "environment-access"
 	EnvironmentRoleName                   = "llm-workload-environment-user"
@@ -66,6 +67,7 @@ type LLMWorkloadEnvironmentReconciler struct {
 	ArgoCDNamespace string
 	KueueAdmission  *KueueAdmissionConfig
 	HyperShift      *HyperShiftConfig
+	Expiration      *ExpirationConfig
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -85,6 +87,12 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{Requeue: true}, nil
+	}
+	if apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ExpiredCondition) {
+		return ctrl.Result{}, nil
+	}
+	if isEnvironmentExpired(environment, time.Now()) && !expirationExempt(environment) {
+		return ctrl.Result{}, markEnvironmentExpired(ctx, r.Client, r.apiReader(), environment, namespaceName, time.Now())
 	}
 	// Cleanup is independent of provisioning. A revoked queue must not stop
 	// label removal from unregistering an environment.
@@ -111,6 +119,14 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 	environment *environmentv1alpha1.LLMWorkloadEnvironment,
 	namespaceName string,
 ) (ctrl.Result, error) {
+	invalidDuration, err := r.reconcileExpiration(ctx, environment)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if invalidDuration && environment.Status.ExpirationTimestamp == nil {
+		return r.notReady(ctx, environment, namespaceName, "InvalidDuration", "The requested duration is invalid; no namespace was created", 0, nil)
+	}
+
 	if err := r.removeLegacyKubeconfigSecret(ctx, environment); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -215,6 +231,45 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *LLMWorkloadEnvironmentReconciler) expirationConfig() ExpirationConfig {
+	if r.Expiration != nil {
+		return *r.Expiration
+	}
+	return ExpirationConfig{Minimum: DefaultMinimumEnvironmentDuration, Maximum: DefaultMaximumEnvironmentDuration}
+}
+
+// reconcileExpiration stores an absolute expiration time when a requested duration
+// is first observed or changes. It never slides the timestamp during ordinary
+// reconciles. Invalid updates are recorded, but leave an existing timestamp intact.
+func (r *LLMWorkloadEnvironmentReconciler) reconcileExpiration(ctx context.Context, environment *environmentv1alpha1.LLMWorkloadEnvironment) (bool, error) {
+	requested := environment.Spec.Duration
+	if requested == environment.Status.LastObservedDuration && environment.Status.ExpirationTimestamp != nil {
+		return false, nil
+	}
+
+	duration, err := r.expirationConfig().durationFor(requested)
+	if err != nil {
+		before := environment.DeepCopy()
+		environment.Status.LastObservedDuration = requested
+		apimeta.SetStatusCondition(&environment.Status.Conditions, metav1.Condition{
+			Type: environmentv1alpha1.ExpirationReadyCondition, Status: metav1.ConditionFalse,
+			ObservedGeneration: environment.Generation, Reason: "InvalidDuration", Message: err.Error(),
+		})
+		return true, r.patchEnvironmentStatus(ctx, environment, before)
+	}
+
+	before := environment.DeepCopy()
+	expiresAt := metav1.NewTime(time.Now().Add(duration))
+	environment.Status.ExpirationTimestamp = &expiresAt
+	environment.Status.LastObservedDuration = requested
+	apimeta.SetStatusCondition(&environment.Status.Conditions, metav1.Condition{
+		Type: environmentv1alpha1.ExpirationReadyCondition, Status: metav1.ConditionTrue,
+		ObservedGeneration: environment.Generation, Reason: "Scheduled",
+		Message: fmt.Sprintf("Environment expires at %s", expiresAt.UTC().Format(time.RFC3339)),
+	})
+	return false, r.patchEnvironmentStatus(ctx, environment, before)
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) ensureNamespace(
@@ -719,7 +774,15 @@ func (r *LLMWorkloadEnvironmentReconciler) patchEnvironmentStatus(ctx context.Co
 	if reflect.DeepEqual(before.Status, environment.Status) {
 		return nil
 	}
-	return r.Status().Patch(ctx, environment, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{}))
+	if err := r.Status().Patch(ctx, environment, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})); err != nil {
+		return err
+	}
+	current := &environmentv1alpha1.LLMWorkloadEnvironment{}
+	if err := r.apiReader().Get(ctx, types.NamespacedName{Namespace: environment.Namespace, Name: environment.Name}, current); err != nil {
+		return err
+	}
+	*environment = *current
+	return nil
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) finalize(

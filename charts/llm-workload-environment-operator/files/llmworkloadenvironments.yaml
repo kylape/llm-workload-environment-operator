@@ -24,6 +24,12 @@ spec:
     - jsonPath: .status.namespaceRef.name
       name: Namespace
       type: string
+    - jsonPath: .status.expirationTimestamp
+      name: Expires
+      type: date
+    - jsonPath: .status.conditions[?(@.type=='Expired')].status
+      name: Expired
+      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
@@ -61,6 +67,12 @@ spec:
                 x-kubernetes-validations:
                 - message: clusterQueue is immutable
                   rule: self == oldSelf
+              duration:
+                description: |-
+                  Duration is the requested lifetime of the environment, using Go time.Duration syntax.
+                  If omitted, the operator uses its configured minimum duration.
+                minLength: 1
+                type: string
               hypershift:
                 description: HyperShift configures a hosted OpenShift cluster with
                   KubeVirt workers.
@@ -242,6 +254,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              expirationTimestamp:
+                description: |-
+                  ExpirationTimestamp is the absolute expiration time currently enforced by the operator.
+                  Changing spec.duration updates this timestamp only when the new duration is valid.
+                format: date-time
+                type: string
               hostedClusterRef:
                 description: HostedClusterRef records the established hosted cluster
                   identity.
@@ -291,6 +309,11 @@ spec:
                   Kubeconfig contains a base64-encoded kubeconfig for verified API access.
                   HyperShift may publish it before workers and full installation are Ready.
                 format: byte
+                type: string
+              lastObservedDuration:
+                description: |-
+                  LastObservedDuration records the last requested duration evaluated by the operator,
+                  including invalid values that did not change ExpirationTimestamp.
                 type: string
               namespaceRef:
                 description: NamespaceRef identifies the backing host-cluster namespace.
