@@ -3,7 +3,7 @@
 `mode: SNO` requests a complete independent OpenShift cluster in a VM. LWE owns
 the environment lifecycle and delegates the cluster implementation to
 [`sno-vm-operator`](https://github.com/kylape/sno-vm-operator) through its
-`sno.klape.io/v1alpha1` `SNOVirtualMachine` API. LWE does not build images, run
+`sno.llm-d.io/v1alpha1` `SNOVirtualMachine` API. LWE does not build images, run
 recert, or allocate guest addresses. The provider remains independently usable.
 
 ## Platform prerequisites

@@ -67,7 +67,7 @@ func TestCRDSNODefaultsAndImmutableOptions(t *testing.T) {
 		t.Fatalf("SNO mode was not immutable: %v", err)
 	}
 	// Status observations must remain writable while spec is immutable.
-	object.Status.SNOVirtualMachineRef = &corev1.ObjectReference{APIVersion: "sno.klape.io/v1alpha1", Kind: "SNOVirtualMachine", Name: "sno", Namespace: "env-sno-defaults"}
+	object.Status.SNOVirtualMachineRef = &corev1.ObjectReference{APIVersion: "sno.llm-d.io/v1alpha1", Kind: "SNOVirtualMachine", Name: "sno", Namespace: "env-sno-defaults"}
 	if err = c.Status().Update(ctx, object); err != nil {
 		t.Fatal(err)
 	}

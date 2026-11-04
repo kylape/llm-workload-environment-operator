@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var snoGVK = schema.GroupVersionKind{Group: "sno.klape.io", Version: "v1alpha1", Kind: "SNOVirtualMachine"}
+var snoGVK = schema.GroupVersionKind{Group: "sno.llm-d.io", Version: "v1alpha1", Kind: "SNOVirtualMachine"}
 
 const snoRequestName = "sno"
 

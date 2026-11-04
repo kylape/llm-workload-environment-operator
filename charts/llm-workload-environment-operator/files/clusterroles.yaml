@@ -441,7 +441,7 @@ rules:
     verbs:
       - get
   - apiGroups:
-      - sno.klape.io
+      - sno.llm-d.io
     resources:
       - snovirtualmachines
     verbs:
