@@ -61,7 +61,15 @@ func (m *ExpirationMonitor) Review(ctx context.Context, now time.Time) error {
 	var reviewErr error
 	for index := range list.Items {
 		environment := &list.Items[index]
-		if environment.DeletionTimestamp != nil || (!isEnvironmentExpired(environment, now) && !environmentExpiredCondition(environment)) {
+		if environment.DeletionTimestamp != nil {
+			continue
+		}
+		if environment.Status.ExpirationTimestamp != nil {
+			if err := refreshExpirationRemaining(ctx, m.Client, m.apiReader(), environment, now); err != nil {
+				reviewErr = errors.Join(reviewErr, fmt.Errorf("refresh expiration for LWE %s/%s: %w", environment.Namespace, environment.Name, err))
+			}
+		}
+		if !isEnvironmentExpired(environment, now) && !environmentExpiredCondition(environment) {
 			continue
 		}
 		if expirationExempt(environment) && !environmentExpiredCondition(environment) {
@@ -90,6 +98,59 @@ func (r *LLMWorkloadEnvironmentReconciler) apiReader() client.Reader {
 		return r.APIReader
 	}
 	return r.Client
+}
+
+func expirationRemaining(now, expiresAt time.Time) string {
+	remaining := expiresAt.Sub(now)
+	if remaining <= 0 {
+		return "0s"
+	}
+
+	minutes := int64(remaining / time.Minute)
+	if remaining%time.Minute != 0 {
+		minutes++
+	}
+	hours := minutes / 60
+	minutes %= 60
+	if hours == 0 {
+		return fmt.Sprintf("%dm", minutes)
+	}
+	if minutes == 0 {
+		return fmt.Sprintf("%dh", hours)
+	}
+	return fmt.Sprintf("%dh%dm", hours, minutes)
+}
+
+func refreshExpirationRemaining(
+	ctx context.Context,
+	writer client.Client,
+	reader client.Reader,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
+	now time.Time,
+) error {
+	if writer == nil || reader == nil {
+		return fmt.Errorf("expiration monitor requires a Kubernetes client and reader")
+	}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		current := &environmentv1alpha1.LLMWorkloadEnvironment{}
+		if err := reader.Get(ctx, types.NamespacedName{Namespace: environment.Namespace, Name: environment.Name}, current); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		if current.DeletionTimestamp != nil || current.Status.ExpirationTimestamp == nil {
+			return nil
+		}
+		remaining := expirationRemaining(now, current.Status.ExpirationTimestamp.Time)
+		if current.Status.ExpirationRemaining == remaining {
+			return nil
+		}
+		before := current.DeepCopy()
+		current.Status.ExpirationRemaining = remaining
+		if err := writer.Status().Patch(ctx, current, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})); err != nil {
+			return err
+		}
+		environment.Status = current.Status
+		return nil
+	})
 }
 
 func expirationExempt(environment *environmentv1alpha1.LLMWorkloadEnvironment) bool {
@@ -164,6 +225,7 @@ func markEnvironmentExpired(
 			Type: environmentv1alpha1.ExpirationReadyCondition, Status: metav1.ConditionTrue,
 			ObservedGeneration: current.Generation, Reason: "Expired", Message: "Environment lifetime has ended",
 		})
+		current.Status.ExpirationRemaining = "0s"
 		if err := writer.Status().Patch(ctx, current, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{})); err != nil {
 			return err
 		}

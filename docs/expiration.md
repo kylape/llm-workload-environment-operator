@@ -8,7 +8,9 @@ the operator uses its configured minimum duration. The default accepted range is
 positive Go duration strings, and the minimum cannot exceed the maximum.
 
 The operator records the absolute deadline in
-`status.expirationTimestamp`. Ordinary reconciliation does not move it. When
+`status.expirationTimestamp`. The `EXPIRES` column in `kubectl get lwe` shows the
+rounded-up remaining duration, refreshed every minute; the absolute deadline
+remains available in status. Ordinary reconciliation does not move the deadline. When
 `spec.duration` changes, a valid value schedules a new deadline from the time of
 the update. An invalid initial duration prevents namespace creation. An invalid
 duration update leaves the existing deadline unchanged and sets
