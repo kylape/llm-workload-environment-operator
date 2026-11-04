@@ -25,7 +25,7 @@ func snoFixture(t *testing.T) (*LLMWorkloadEnvironmentReconciler, *environmentv1
 	scheme.AddKnownTypeWithName(snoGVK.GroupVersion().WithKind("SNOVirtualMachineList"), &unstructured.UnstructuredList{})
 	environment := &environmentv1alpha1.LLMWorkloadEnvironment{ObjectMeta: metav1.ObjectMeta{Name: "sno-example", Namespace: "requests", UID: types.UID("environment-uid"), Finalizers: []string{FinalizerName}}, Spec: environmentv1alpha1.LLMWorkloadEnvironmentSpec{Mode: environmentv1alpha1.EnvironmentModeSNO}}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(environment, newSNO("unused")).WithObjects(environment).Build()
-	r := &LLMWorkloadEnvironmentReconciler{Client: c, Scheme: scheme, OpenShift: true, KueueAdmission: &KueueAdmissionConfig{Enabled: false}}
+	r := &LLMWorkloadEnvironmentReconciler{Client: c, Scheme: scheme, OpenShift: true, KueueAdmission: &KueueAdmissionConfig{Enabled: false}, SNOAPIProbe: func(context.Context, []byte) error { return nil }}
 	return r, environment, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(environment)}
 }
 

@@ -68,6 +68,7 @@ type LLMWorkloadEnvironmentReconciler struct {
 	KueueAdmission  *KueueAdmissionConfig
 	HyperShift      *HyperShiftConfig
 	Expiration      *ExpirationConfig
+	SNOAPIProbe     func(context.Context, []byte) error
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

@@ -33,9 +33,10 @@ The mode and SNO options are immutable. To select a different profile, create
 a new environment. The provider API is optional at operator startup; its absence
 reports `SNOProviderNotAvailable` and never yields host-cluster credentials.
 
-LWE waits for the provider's current-generation `Ready=True` and an access
-Secret owned by that exact SNO request UID. It accepts only portable credentials
-with an embedded guest CA, TLS verification, and the published HTTPS API URL.
+LWE waits for the provider's current-generation `Ready=True`, an access Secret
+owned by that exact SNO request UID, and a successful authenticated guest API
+readiness check. It accepts only portable credentials with an embedded guest
+CA, TLS verification, and the published HTTPS API URL.
 It publishes the kubeconfig using the existing base64 `status.kubeconfig`
 contract and records `status.snoVirtualMachineRef` for identity and deletion.
 Readers of the LWE resource can obtain its administrator kubeconfig; constrain
