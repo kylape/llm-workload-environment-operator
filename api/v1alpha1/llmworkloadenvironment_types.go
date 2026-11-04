@@ -175,7 +175,6 @@ type LLMWorkloadEnvironmentStatus struct {
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.namespaceRef.name"
 // +kubebuilder:printcolumn:name="Expires",type="string",JSONPath=".status.expirationRemaining"
-// +kubebuilder:printcolumn:name="Expired",type="string",JSONPath=".status.conditions[?(@.type=='Expired')].status"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 type LLMWorkloadEnvironment struct {
 	metav1.TypeMeta   `json:",inline"`

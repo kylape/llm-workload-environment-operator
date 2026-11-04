@@ -27,9 +27,6 @@ spec:
     - jsonPath: .status.expirationRemaining
       name: Expires
       type: string
-    - jsonPath: .status.conditions[?(@.type=='Expired')].status
-      name: Expired
-      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
