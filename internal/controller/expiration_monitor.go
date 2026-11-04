@@ -170,9 +170,8 @@ func environmentExpiredCondition(environment *environmentv1alpha1.LLMWorkloadEnv
 	return false
 }
 
-// markEnvironmentExpired first commits the terminal status condition, then
-// deletes the owned namespace. The periodic monitor retries namespace deletion
-// if the API request fails after status was updated.
+// markEnvironmentExpired commits the terminal status condition. The LWE
+// reconciler drains mode-specific resources before removing the owned namespace.
 func markEnvironmentExpired(
 	ctx context.Context,
 	writer client.Client,
@@ -197,9 +196,7 @@ func markEnvironmentExpired(
 		return fmt.Errorf("namespace %q is not controlled by this LWE", namespaceName)
 	}
 
-	shouldDeleteNamespace := false
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		shouldDeleteNamespace = false
 		current := &environmentv1alpha1.LLMWorkloadEnvironment{}
 		if err := reader.Get(ctx, types.NamespacedName{Namespace: environment.Namespace, Name: environment.Name}, current); err != nil {
 			return client.IgnoreNotFound(err)
@@ -210,7 +207,6 @@ func markEnvironmentExpired(
 		if !environmentExpiredCondition(current) && (!isEnvironmentExpired(current, now) || expirationExempt(current)) {
 			return nil
 		}
-		shouldDeleteNamespace = true
 		before := current.DeepCopy()
 		apimeta.SetStatusCondition(&current.Status.Conditions, metav1.Condition{
 			Type: environmentv1alpha1.ExpiredCondition, Status: metav1.ConditionTrue,
@@ -233,20 +229,6 @@ func markEnvironmentExpired(
 		return nil
 	}); err != nil {
 		return fmt.Errorf("update expired status: %w", err)
-	}
-	if !shouldDeleteNamespace {
-		return nil
-	}
-
-	if apierrors.IsNotFound(err) {
-		return nil
-	}
-	if namespace.DeletionTimestamp != nil {
-		return nil
-	}
-	uid := namespace.UID
-	if deleteErr := writer.Delete(ctx, namespace, &client.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}}); deleteErr != nil && !apierrors.IsNotFound(deleteErr) {
-		return fmt.Errorf("delete namespace %q: %w", namespaceName, deleteErr)
 	}
 	return nil
 }

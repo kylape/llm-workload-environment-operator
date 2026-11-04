@@ -137,8 +137,8 @@ func TestExpirationMonitorDeletesExpiredNamespaceAndMarksLWE(t *testing.T) {
 	if err := monitor.Review(ctx, time.Now()); err != nil {
 		t.Fatalf("review expired LWE: %v", err)
 	}
-	if err := client.Get(ctx, types.NamespacedName{Name: namespace.Name}, &corev1.Namespace{}); err == nil {
-		t.Fatal("expired namespace still exists")
+	if err := client.Get(ctx, types.NamespacedName{Name: namespace.Name}, &corev1.Namespace{}); err != nil {
+		t.Fatal("expiration monitor removed the namespace before mode-specific cleanup", err)
 	}
 	current := &environmentv1alpha1.LLMWorkloadEnvironment{}
 	if err := client.Get(ctx, types.NamespacedName{Namespace: environment.Namespace, Name: environment.Name}, current); err != nil {
@@ -149,6 +149,13 @@ func TestExpirationMonitorDeletesExpiredNamespaceAndMarksLWE(t *testing.T) {
 	}
 	if condition := apimeta.FindStatusCondition(current.Status.Conditions, environmentv1alpha1.ReadyCondition); condition == nil || condition.Status != metav1.ConditionFalse || condition.Reason != "Expired" {
 		t.Fatalf("unexpected Ready condition after expiration: %#v", condition)
+	}
+	reconciler := &LLMWorkloadEnvironmentReconciler{Client: client, APIReader: client}
+	if _, err := reconciler.cleanupEnvironmentResources(ctx, current, namespace.Name); err != nil {
+		t.Fatalf("clean up expired environment: %v", err)
+	}
+	if err := client.Get(ctx, types.NamespacedName{Name: namespace.Name}, &corev1.Namespace{}); err == nil {
+		t.Fatal("expired namespace was not removed after mode cleanup")
 	}
 }
 

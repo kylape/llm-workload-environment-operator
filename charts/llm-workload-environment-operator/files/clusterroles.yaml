@@ -440,6 +440,14 @@ rules:
       - hostedcontrolplanes
     verbs:
       - get
+  - apiGroups:
+      - sno.klape.io
+    resources:
+      - snovirtualmachines
+    verbs:
+      - get
+      - create
+      - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

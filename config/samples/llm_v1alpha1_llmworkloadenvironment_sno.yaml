@@ -1,0 +1,10 @@
+apiVersion: llm.redhat.com/v1alpha1
+kind: LLMWorkloadEnvironment
+metadata:
+  name: alice-sno
+  namespace: alice-dev
+spec:
+  mode: SNO
+  clusterQueue: inference-workspaces
+  sno:
+    imageProfile: default

@@ -213,3 +213,11 @@ rules:
       - hostedcontrolplanes
     verbs:
       - get
+  - apiGroups:
+      - sno.klape.io
+    resources:
+      - snovirtualmachines
+    verbs:
+      - get
+      - create
+      - delete

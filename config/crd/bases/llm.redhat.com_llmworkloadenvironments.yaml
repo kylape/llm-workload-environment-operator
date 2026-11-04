@@ -168,20 +168,35 @@ spec:
                   rule: '!has(self.pullSecret) || size(self.pullSecret.name) > 0'
               mode:
                 default: Namespace
-                description: Mode selects a host namespace, vCluster, or hosted OpenShift
-                  cluster.
+                description: Mode selects a host namespace, vCluster, hosted OpenShift
+                  cluster, or SNO VM.
                 enum:
                 - Namespace
                 - VCluster
                 - HyperShift
+                - SNO
                 type: string
                 x-kubernetes-validations:
                 - message: mode is immutable
                   rule: self == oldSelf
+              sno:
+                description: SNO configures an independent preinstalled Single Node
+                  OpenShift VM through the SNO provider.
+                properties:
+                  imageProfile:
+                    default: default
+                    description: ImageProfile selects an administrator-qualified preinstalled
+                      SNO image.
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                type: object
             type: object
             x-kubernetes-validations:
             - message: hypershift options require HyperShift mode
               rule: '!has(self.hypershift) || self.mode == ''HyperShift'''
+            - message: sno options require SNO mode
+              rule: '!has(self.sno) || self.mode == ''SNO'''
             - message: HyperShift profile is immutable
               rule: 'self.mode != ''HyperShift'' || (has(self.hypershift) && has(self.hypershift.profile)
                 ? self.hypershift.profile : ''default'') == (has(oldSelf.hypershift)
@@ -191,6 +206,9 @@ spec:
               rule: 'self.mode != ''HyperShift'' || (has(self.hypershift) && has(self.hypershift.size)
                 ? self.hypershift.size : ''small'') == (has(oldSelf.hypershift) &&
                 has(oldSelf.hypershift.size) ? oldSelf.hypershift.size : ''small'')'
+            - message: SNO options are immutable
+              rule: self.mode != 'SNO' || ((!has(self.sno) && !has(oldSelf.sno)) ||
+                (has(self.sno) && has(oldSelf.sno) && self.sno == oldSelf.sno))
           status:
             properties:
               argoCDClusterSecretRef:
@@ -271,14 +289,15 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              expirationRemaining:
+                description: ExpirationRemaining is the rounded-up time until expiration,
+                  refreshed by the expiration monitor.
+                type: string
               expirationTimestamp:
                 description: |-
                   ExpirationTimestamp is the absolute expiration time currently enforced by the operator.
                   Changing spec.duration updates this timestamp only when the new duration is valid.
                 format: date-time
-                type: string
-              expirationRemaining:
-                description: ExpirationRemaining is the rounded-up time until expiration, refreshed by the expiration monitor.
                 type: string
               hostedClusterRef:
                 description: HostedClusterRef records the established hosted cluster
@@ -328,6 +347,7 @@ spec:
                 description: |-
                   Kubeconfig contains a base64-encoded kubeconfig for verified API access.
                   HyperShift may publish it before workers and full installation are Ready.
+                  SNO publishes it after the provider verifies guest readiness and identity.
                 format: byte
                 type: string
               lastObservedDuration:
@@ -351,6 +371,50 @@ spec:
                 x-kubernetes-map-type: atomic
               nodePoolRef:
                 description: NodePoolRef records the established worker pool identity.
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              snoVirtualMachineRef:
+                description: SNOVirtualMachineRef identifies the provider request
+                  for a Single Node OpenShift VM.
                 properties:
                   apiVersion:
                     description: API version of the referent.
