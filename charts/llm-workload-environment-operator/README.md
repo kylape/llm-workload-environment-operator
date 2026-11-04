@@ -7,12 +7,12 @@ the operator. The release namespace is configurable; the chart does not create
 or manage that Namespace itself.
 
 The default runtime image is pinned by digest. PipelineRun
-`lwe-hypershift-pullsecret-c3ffc44-8k2tw` built revision `c3ffc44` and
+`lwe-expiration-remaining-a28510b-mdtw9` built revision `a28510b` and
 published image digest
-`sha256:d6ba11873e62ba9d6820aafc8baaff0c5ebdf8b544a968260e05d6db5aa2e1ed`.
-Chart version `0.4.2` packages
-LWE expiration, the per-LWE HostedCluster pull-secret override, HyperShift
-mode, optional Kueue integration, and the existing
+`sha256:475ad695db21ebe1ef2824716914027e31a39e7f50040b85e4fba2c753b35dee`.
+Chart version `0.4.3` packages
+LWE expiration with a remaining-duration column, the per-LWE HostedCluster
+pull-secret override, HyperShift mode, optional Kueue integration, and the existing
 Namespace and VCluster modes. It does not install HyperShift, OpenShift
 Virtualization, Kueue, Argo CD, or workload environments. HyperShift is disabled by default.
 The image retains the pinned vCluster chart and scheduling-gate preservation fix.

@@ -2,7 +2,7 @@ apiVersion: v2
 name: llm-workload-environment-operator
 description: Provision LLM workload environments on Kubernetes
 type: application
-version: 0.4.2
+version: 0.4.3
 # Source revision of the default runtime image. CRD updates can ship separately.
-appVersion: "c3ffc44"
+appVersion: "a28510b"
 kubeVersion: ">=1.29.0-0"

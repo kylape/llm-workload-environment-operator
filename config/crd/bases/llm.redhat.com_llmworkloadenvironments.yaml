@@ -24,11 +24,8 @@ spec:
     - jsonPath: .status.namespaceRef.name
       name: Namespace
       type: string
-    - jsonPath: .status.expirationTimestamp
+    - jsonPath: .status.expirationRemaining
       name: Expires
-      type: date
-    - jsonPath: .status.conditions[?(@.type=='Expired')].status
-      name: Expired
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -279,6 +276,9 @@ spec:
                   ExpirationTimestamp is the absolute expiration time currently enforced by the operator.
                   Changing spec.duration updates this timestamp only when the new duration is valid.
                 format: date-time
+                type: string
+              expirationRemaining:
+                description: ExpirationRemaining is the rounded-up time until expiration, refreshed by the expiration monitor.
                 type: string
               hostedClusterRef:
                 description: HostedClusterRef records the established hosted cluster

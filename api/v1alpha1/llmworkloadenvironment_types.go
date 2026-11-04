@@ -135,6 +135,9 @@ type LLMWorkloadEnvironmentStatus struct {
 	// Changing spec.duration updates this timestamp only when the new duration is valid.
 	ExpirationTimestamp *metav1.Time `json:"expirationTimestamp,omitempty"`
 
+	// ExpirationRemaining is the rounded-up time until expiration, refreshed by the expiration monitor.
+	ExpirationRemaining string `json:"expirationRemaining,omitempty"`
+
 	// LastObservedDuration records the last requested duration evaluated by the operator,
 	// including invalid values that did not change ExpirationTimestamp.
 	LastObservedDuration string `json:"lastObservedDuration,omitempty"`
@@ -171,8 +174,7 @@ type LLMWorkloadEnvironmentStatus struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.spec) || !has(self.spec.mode) || self.spec.mode != 'HyperShift' || size(self.metadata.name) <= 51",message="HyperShift environment names must be at most 51 characters for the hosted control-plane namespace"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.namespaceRef.name"
-// +kubebuilder:printcolumn:name="Expires",type="date",JSONPath=".status.expirationTimestamp"
-// +kubebuilder:printcolumn:name="Expired",type="string",JSONPath=".status.conditions[?(@.type=='Expired')].status"
+// +kubebuilder:printcolumn:name="Expires",type="string",JSONPath=".status.expirationRemaining"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 type LLMWorkloadEnvironment struct {
 	metav1.TypeMeta   `json:",inline"`

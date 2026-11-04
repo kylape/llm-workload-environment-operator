@@ -261,8 +261,10 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileExpiration(ctx context.Conte
 	}
 
 	before := environment.DeepCopy()
-	expiresAt := metav1.NewTime(time.Now().Add(duration))
+	now := time.Now()
+	expiresAt := metav1.NewTime(now.Add(duration))
 	environment.Status.ExpirationTimestamp = &expiresAt
+	environment.Status.ExpirationRemaining = expirationRemaining(now, expiresAt.Time)
 	environment.Status.LastObservedDuration = requested
 	apimeta.SetStatusCondition(&environment.Status.Conditions, metav1.Condition{
 		Type: environmentv1alpha1.ExpirationReadyCondition, Status: metav1.ConditionTrue,
