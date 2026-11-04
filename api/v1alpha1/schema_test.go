@@ -51,6 +51,8 @@ func TestHyperShiftSchema(t *testing.T) {
 	}{
 		{"default", LLMWorkloadEnvironmentSpec{}, true},
 		{"hyper", LLMWorkloadEnvironmentSpec{Mode: EnvironmentModeHyperShift, HyperShift: &HyperShiftEnvironmentSpec{}}, true},
+		{"hyper-pull-secret", LLMWorkloadEnvironmentSpec{Mode: EnvironmentModeHyperShift, HyperShift: &HyperShiftEnvironmentSpec{PullSecret: &corev1.LocalObjectReference{Name: "tenant-pull"}}}, true},
+		{"hyper-empty-pull-secret", LLMWorkloadEnvironmentSpec{Mode: EnvironmentModeHyperShift, HyperShift: &HyperShiftEnvironmentSpec{PullSecret: &corev1.LocalObjectReference{}}}, false},
 		{"mode-only", LLMWorkloadEnvironmentSpec{Mode: EnvironmentModeHyperShift}, true},
 		{strings.Repeat("a", 51), LLMWorkloadEnvironmentSpec{Mode: EnvironmentModeHyperShift}, true},
 		{strings.Repeat("b", 52), LLMWorkloadEnvironmentSpec{Mode: EnvironmentModeHyperShift}, false},

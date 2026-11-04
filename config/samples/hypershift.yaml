@@ -13,6 +13,10 @@ spec:
     profile: default
     size: small
     replicas: 1
+    # Optional: use a Docker config Secret from this LWE's namespace instead
+    # of the administrator profile's pull Secret.
+    # pullSecret:
+    #   name: hosted-cluster-pull-secret
     imageDigestMirrorSet:
       imageDigestMirrors:
         - source: registry.redhat.io/rhoai

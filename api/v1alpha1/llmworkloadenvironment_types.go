@@ -21,6 +21,7 @@ const (
 	EnvironmentModeHyperShift EnvironmentMode = "HyperShift"
 )
 
+// +kubebuilder:validation:XValidation:rule="!has(self.pullSecret) || size(self.pullSecret.name) > 0",message="pullSecret.name must be set when pullSecret is specified"
 type HyperShiftEnvironmentSpec struct {
 	// Profile selects administrator-managed release, placement and worker sizing.
 	// +kubebuilder:default=default
@@ -39,6 +40,12 @@ type HyperShiftEnvironmentSpec struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=100
 	Replicas *int32 `json:"replicas,omitempty"`
+
+	// PullSecret optionally selects a Docker config Secret in the LWE's namespace
+	// for HostedCluster.spec.pullSecret. When omitted, the administrator profile's
+	// pullSecret is used.
+	// +optional
+	PullSecret *corev1.LocalObjectReference `json:"pullSecret,omitempty"`
 
 	// ImageDigestMirrorSet configures the digest-only image mirrors on HyperShift workers.
 	// +optional

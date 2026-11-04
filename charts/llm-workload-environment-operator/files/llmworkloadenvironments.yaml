@@ -131,6 +131,23 @@ spec:
                     minLength: 1
                     pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                     type: string
+                  pullSecret:
+                    description: |-
+                      PullSecret optionally selects a Docker config Secret in the LWE's namespace
+                      for HostedCluster.spec.pullSecret. When omitted, the administrator profile's
+                      pullSecret is used.
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
                   replicas:
                     default: 1
                     description: Replicas is the desired number of KubeVirt worker
@@ -149,6 +166,9 @@ spec:
                     - large
                     type: string
                 type: object
+                x-kubernetes-validations:
+                - message: pullSecret.name must be set when pullSecret is specified
+                  rule: '!has(self.pullSecret) || size(self.pullSecret.name) > 0'
               mode:
                 default: Namespace
                 description: Mode selects a host namespace, vCluster, or hosted OpenShift
