@@ -220,7 +220,7 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 	} else if environmentMode(environment) == environmentv1alpha1.EnvironmentModeSNO {
 		observation, err := r.ensureSNO(ctx, environment, namespaceName)
 		if err != nil {
-			return r.notReady(ctx, environment, namespaceName, "SNOProvisioningFailed", err.Error(), 30*time.Second, nil)
+			return r.notReady(ctx, environment, namespaceName, "SNOProvisioningFailed", err.Error(), 30*time.Second, err)
 		}
 		if !observation.Ready {
 			return r.notReady(ctx, environment, namespaceName, observation.Reason, observation.Message, 5*time.Second, nil)
