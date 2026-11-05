@@ -28,7 +28,21 @@ type SNOEnvironmentSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	ImageProfile string `json:"imageProfile,omitempty"`
+
+	// Size selects the CPU and memory shape of the SNO VM.
+	// +kubebuilder:default=small
+	// +kubebuilder:validation:Enum=small;medium;large
+	Size SNOSize `json:"size,omitempty"`
 }
+
+// SNOSize selects a coarse-grained CPU and memory shape for SNO.
+type SNOSize string
+
+const (
+	SNOSizeSmall  SNOSize = "small"
+	SNOSizeMedium SNOSize = "medium"
+	SNOSizeLarge  SNOSize = "large"
+)
 
 // +kubebuilder:validation:XValidation:rule="!has(self.pullSecret) || size(self.pullSecret.name) > 0",message="pullSecret.name must be set when pullSecret is specified"
 type HyperShiftEnvironmentSpec struct {

@@ -23,6 +23,18 @@ var snoGVK = schema.GroupVersionKind{Group: "sno.llm-d.io", Version: "v1alpha1",
 
 const snoRequestName = "sno"
 
+type snoResources struct {
+	Cores    int64
+	Memory   string
+	RootDisk string
+}
+
+var snoSizeResources = map[environmentv1alpha1.SNOSize]snoResources{
+	environmentv1alpha1.SNOSizeSmall:  {Cores: 16, Memory: "128Gi", RootDisk: "500Gi"},
+	environmentv1alpha1.SNOSizeMedium: {Cores: 32, Memory: "256Gi", RootDisk: "500Gi"},
+	environmentv1alpha1.SNOSizeLarge:  {Cores: 64, Memory: "512Gi", RootDisk: "500Gi"},
+}
+
 type snoObservation struct {
 	Kubeconfig []byte
 	Ready      bool
@@ -45,10 +57,21 @@ func snoImageProfile(environment *environmentv1alpha1.LLMWorkloadEnvironment) st
 	return "default"
 }
 
+func snoSize(environment *environmentv1alpha1.LLMWorkloadEnvironment) environmentv1alpha1.SNOSize {
+	if environment.Spec.SNO != nil && environment.Spec.SNO.Size != "" {
+		return environment.Spec.SNO.Size
+	}
+	return environmentv1alpha1.SNOSizeSmall
+}
+
 func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, environment *environmentv1alpha1.LLMWorkloadEnvironment, namespace string) (snoObservation, error) {
 	waiting := snoObservation{Reason: "SNOProvisioning", Message: "SNO provider is preparing an independent cluster and external API"}
 	if !r.isOpenShift() {
 		return snoObservation{Reason: "SNOPlatformNotConfigured", Message: "SNO mode requires OpenShift Virtualization"}, nil
+	}
+	resources, ok := snoSizeResources[snoSize(environment)]
+	if !ok {
+		return waiting, fmt.Errorf("unsupported SNO size %q", snoSize(environment))
 	}
 	request := newSNO(namespace)
 	err := r.Get(ctx, client.ObjectKeyFromObject(request), request)
@@ -62,7 +85,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, enviro
 		request.Object["spec"] = map[string]interface{}{
 			"imageProfile":            snoImageProfile(environment),
 			"rootDiskRetentionPolicy": "Delete",
-			"resources":               map[string]interface{}{"cores": int64(16), "memory": "128Gi", "rootDisk": "500Gi"},
+			"resources":               map[string]interface{}{"cores": resources.Cores, "memory": resources.Memory, "rootDisk": resources.RootDisk},
 		}
 		// The environment and SNO request live in different namespaces. Use the
 		// established LWE ownership annotations, never a cross-namespace ownerRef.
@@ -84,7 +107,10 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, enviro
 	}
 	profile, _, _ := unstructured.NestedString(request.Object, "spec", "imageProfile")
 	retention, _, _ := unstructured.NestedString(request.Object, "spec", "rootDiskRetentionPolicy")
-	if profile != snoImageProfile(environment) || retention != "Delete" {
+	cores, _, _ := unstructured.NestedInt64(request.Object, "spec", "resources", "cores")
+	memory, _, _ := unstructured.NestedString(request.Object, "spec", "resources", "memory")
+	rootDisk, _, _ := unstructured.NestedString(request.Object, "spec", "resources", "rootDisk")
+	if profile != snoImageProfile(environment) || retention != "Delete" || cores != resources.Cores || memory != resources.Memory || rootDisk != resources.RootDisk {
 		return waiting, fmt.Errorf("existing SNO request does not match the immutable environment contract")
 	}
 	reference := &corev1.ObjectReference{APIVersion: snoGVK.GroupVersion().String(), Kind: snoGVK.Kind, Namespace: namespace, Name: request.GetName(), UID: request.GetUID()}

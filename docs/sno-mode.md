@@ -9,25 +9,32 @@ recert, or allocate guest addresses. The provider remains independently usable.
 ## Platform prerequisites
 
 * OpenShift Virtualization and the SNO operator API/controller.
+* SNO operator runtime permission to create, get, update, and delete Secrets
+  across namespaces, so it can provision bootstrap and guest credentials in
+  the namespace containing each SNO request.
 * A provider-qualified preinstalled seed image and usable local cache capacity.
 * Provider-managed DNS, unique guest identity, and external API access.
 * The ordinary LWE landing-namespace RBAC and Kueue configuration, if enabled.
 
 The LWE adapter implements the request, readiness, credential handoff, and
-deletion contract. The current SNO provider release does not yet run its instance
-reconciler and rejects `instances.enabled: true`; live provisioning therefore
-requires a provider release with that lifecycle enabled. Seed image qualification,
-clone identity isolation, and the startup target also need end-to-end validation.
-Installing the LWE adapter alone does not enable a working seed image or claim a
-five-minute startup result.
+deletion contract. The provider must have its instance reconciler enabled and a
+qualified seed image configured. Seed image qualification, clone identity
+isolation, and the startup target still need end-to-end validation; this mode
+makes no five-minute startup claim.
 
 ## Request and access
 
 Apply the [sample request](../config/samples/llm_v1alpha1_llmworkloadenvironment_sno.yaml).
 LWE creates its backing namespace, labels it `sno.klape.io/enabled=true`, and
-creates a request named `sno` with 16 cores, 128 GiB RAM, one 500 GiB root disk,
-and the selected `spec.sno.imageProfile`. These initial hardware defaults are
-fixed by the adapter. The provider controls image eligibility and placement.
+creates a request named `sno` using the selected `spec.sno.size` and
+`spec.sno.imageProfile`. The size is immutable after creation and defaults to
+`small`. `small` requests 16 cores and 128 GiB RAM, `medium` requests 32 cores
+and 256 GiB RAM, and `large` requests 64 cores and 512 GiB RAM. Each size uses a
+500 GiB root disk. These CPU and memory mappings match the default HyperShift
+sizes. The provider controls image eligibility and placement.
+The provider reads its configured OpenShift pull Secret and copies its contents
+into bootstrap data for the guest. The guest API kubeconfig is published in the
+`sno-credentials` Secret in the SNO request namespace.
 
 The mode and SNO options are immutable. To select a different profile, create
 a new environment. The provider API is optional at operator startup; its absence

@@ -190,6 +190,15 @@ spec:
                     maxLength: 63
                     minLength: 1
                     type: string
+                  size:
+                    default: small
+                    description: Size selects the CPU and memory shape of the SNO
+                      VM.
+                    enum:
+                    - small
+                    - medium
+                    - large
+                    type: string
                 type: object
             type: object
             x-kubernetes-validations:

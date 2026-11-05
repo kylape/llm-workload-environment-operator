@@ -8,3 +8,4 @@ spec:
   clusterQueue: inference-workspaces
   sno:
     imageProfile: default
+    size: small
