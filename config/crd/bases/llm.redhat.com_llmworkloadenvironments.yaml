@@ -192,8 +192,8 @@ spec:
                     type: string
                   size:
                     default: small
-                    description: Size selects the CPU and memory shape of the SNO
-                      VM.
+                    description: Size selects the SNO VM's CPU, memory, and
+                      workload disk capacity.
                     enum:
                     - small
                     - medium

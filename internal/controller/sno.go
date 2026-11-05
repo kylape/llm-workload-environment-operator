@@ -27,12 +27,13 @@ type snoResources struct {
 	Cores    int64
 	Memory   string
 	RootDisk string
+	DataDisk string
 }
 
 var snoSizeResources = map[environmentv1alpha1.SNOSize]snoResources{
-	environmentv1alpha1.SNOSizeSmall:  {Cores: 16, Memory: "128Gi", RootDisk: "500Gi"},
-	environmentv1alpha1.SNOSizeMedium: {Cores: 32, Memory: "256Gi", RootDisk: "500Gi"},
-	environmentv1alpha1.SNOSizeLarge:  {Cores: 64, Memory: "512Gi", RootDisk: "500Gi"},
+	environmentv1alpha1.SNOSizeSmall:  {Cores: 16, Memory: "128Gi", RootDisk: "200Gi", DataDisk: "200Gi"},
+	environmentv1alpha1.SNOSizeMedium: {Cores: 32, Memory: "256Gi", RootDisk: "200Gi", DataDisk: "400Gi"},
+	environmentv1alpha1.SNOSizeLarge:  {Cores: 64, Memory: "512Gi", RootDisk: "200Gi", DataDisk: "800Gi"},
 }
 
 type snoObservation struct {
@@ -85,7 +86,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, enviro
 		request.Object["spec"] = map[string]interface{}{
 			"imageProfile":            snoImageProfile(environment),
 			"rootDiskRetentionPolicy": "Delete",
-			"resources":               map[string]interface{}{"cores": resources.Cores, "memory": resources.Memory, "rootDisk": resources.RootDisk},
+			"resources":               map[string]interface{}{"cores": resources.Cores, "memory": resources.Memory, "rootDisk": resources.RootDisk, "dataDisk": resources.DataDisk},
 		}
 		// The environment and SNO request live in different namespaces. Use the
 		// established LWE ownership annotations, never a cross-namespace ownerRef.
@@ -110,7 +111,8 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, enviro
 	cores, _, _ := unstructured.NestedInt64(request.Object, "spec", "resources", "cores")
 	memory, _, _ := unstructured.NestedString(request.Object, "spec", "resources", "memory")
 	rootDisk, _, _ := unstructured.NestedString(request.Object, "spec", "resources", "rootDisk")
-	if profile != snoImageProfile(environment) || retention != "Delete" || cores != resources.Cores || memory != resources.Memory || rootDisk != resources.RootDisk {
+	dataDisk, _, _ := unstructured.NestedString(request.Object, "spec", "resources", "dataDisk")
+	if profile != snoImageProfile(environment) || retention != "Delete" || cores != resources.Cores || memory != resources.Memory || rootDisk != resources.RootDisk || dataDisk != resources.DataDisk {
 		return waiting, fmt.Errorf("existing SNO request does not match the immutable environment contract")
 	}
 	reference := &corev1.ObjectReference{APIVersion: snoGVK.GroupVersion().String(), Kind: snoGVK.Kind, Namespace: namespace, Name: request.GetName(), UID: request.GetUID()}

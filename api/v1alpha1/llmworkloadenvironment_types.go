@@ -29,13 +29,13 @@ type SNOEnvironmentSpec struct {
 	// +kubebuilder:validation:MaxLength=63
 	ImageProfile string `json:"imageProfile,omitempty"`
 
-	// Size selects the CPU and memory shape of the SNO VM.
+	// Size selects the SNO VM's CPU, memory, and workload disk capacity.
 	// +kubebuilder:default=small
 	// +kubebuilder:validation:Enum=small;medium;large
 	Size SNOSize `json:"size,omitempty"`
 }
 
-// SNOSize selects a coarse-grained CPU and memory shape for SNO.
+// SNOSize selects a coarse-grained CPU, memory, and workload disk shape for SNO.
 type SNOSize string
 
 const (

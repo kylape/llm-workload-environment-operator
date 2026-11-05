@@ -28,17 +28,27 @@ Apply the [sample request](../config/samples/llm_v1alpha1_llmworkloadenvironment
 LWE creates its backing namespace, labels it `sno.klape.io/enabled=true`, and
 creates a request named `sno` using the selected `spec.sno.size` and
 `spec.sno.imageProfile`. The size is immutable after creation and defaults to
-`small`. `small` requests 16 cores and 128 GiB RAM, `medium` requests 32 cores
-and 256 GiB RAM, and `large` requests 64 cores and 512 GiB RAM. Each size uses a
-500 GiB root disk. These CPU and memory mappings match the default HyperShift
-sizes. The provider controls image eligibility and placement.
+`small`. `small` requests 16 cores, 128 GiB RAM, and a 200 GiB workload disk;
+`medium` requests 32 cores, 256 GiB RAM, and a 400 GiB workload disk; `large`
+requests 64 cores, 512 GiB RAM, and an 800 GiB workload disk. All sizes also use
+a 200 GiB system disk for RHCOS, OpenShift platform data, and ephemeral workload
+storage. The system disk is above the documented 120 GB SNO minimum; additional
+operators and image caches can require more. CPU and memory mappings match the
+default HyperShift sizes. Total disk capacity is 400/600/1000 GiB for
+Small/Medium/Large. The provider controls image eligibility and placement; install
+and configure LVMS in the guest to consume the workload disk. Point its device selector at that
+second disk only (typically `/dev/vdb` after verifying the guest device list) so
+it cannot claim the system disk. LWE does not install LVMS.
 The provider reads its configured OpenShift pull Secret and copies its contents
 into bootstrap data for the guest. The guest API kubeconfig is published in the
 `sno-credentials` Secret in the SNO request namespace.
 
-The mode and SNO options are immutable. To select a different profile, create
-a new environment. The provider API is optional at operator startup; its absence
-reports `SNOProviderNotAvailable` and never yields host-cluster credentials.
+The mode and SNO options are immutable. To select a different size or move an
+existing environment to the separated system/workload disk layout, create a new
+environment; the provider cannot resize an established guest in place. The
+provider API is optional at operator
+startup; its absence reports `SNOProviderNotAvailable` and never yields
+host-cluster credentials.
 
 LWE waits for the provider's current-generation `Ready=True`, an access Secret
 owned by that exact SNO request UID, and a successful authenticated guest API
