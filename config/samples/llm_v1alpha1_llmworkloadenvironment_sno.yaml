@@ -9,3 +9,5 @@ spec:
   sno:
     imageProfile: default
     size: small
+    # Optional override; omit it to use the size-based limit.
+    # maxPods: 750

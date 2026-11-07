@@ -65,6 +65,13 @@ func snoSize(environment *environmentv1alpha1.LLMWorkloadEnvironment) environmen
 	return environmentv1alpha1.SNOSizeSmall
 }
 
+func snoMaxPods(environment *environmentv1alpha1.LLMWorkloadEnvironment) int64 {
+	if environment.Spec.SNO != nil && environment.Spec.SNO.MaxPods != nil {
+		return int64(*environment.Spec.SNO.MaxPods)
+	}
+	return 0
+}
+
 func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, environment *environmentv1alpha1.LLMWorkloadEnvironment, namespace string) (snoObservation, error) {
 	waiting := snoObservation{Reason: "SNOProvisioning", Message: "SNO provider is preparing an independent cluster and external API"}
 	if !r.isOpenShift() {
@@ -83,11 +90,15 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, enviro
 		if ref := environment.Status.SNOVirtualMachineRef; ref != nil && ref.UID != "" {
 			return snoObservation{Reason: "SNORequestMissing", Message: "Established SNO request is missing; recreate the environment explicitly"}, nil
 		}
-		request.Object["spec"] = map[string]interface{}{
+		spec := map[string]interface{}{
 			"imageProfile":            snoImageProfile(environment),
 			"rootDiskRetentionPolicy": "Delete",
 			"resources":               map[string]interface{}{"cores": resources.Cores, "memory": resources.Memory, "rootDisk": resources.RootDisk, "dataDisk": resources.DataDisk},
 		}
+		if maxPods := snoMaxPods(environment); maxPods > 0 {
+			spec["maxPods"] = maxPods
+		}
+		request.Object["spec"] = spec
 		// The environment and SNO request live in different namespaces. Use the
 		// established LWE ownership annotations, never a cross-namespace ownerRef.
 		markEnvironmentOwned(request, environment)
@@ -112,7 +123,8 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, enviro
 	memory, _, _ := unstructured.NestedString(request.Object, "spec", "resources", "memory")
 	rootDisk, _, _ := unstructured.NestedString(request.Object, "spec", "resources", "rootDisk")
 	dataDisk, _, _ := unstructured.NestedString(request.Object, "spec", "resources", "dataDisk")
-	if profile != snoImageProfile(environment) || retention != "Delete" || cores != resources.Cores || memory != resources.Memory || rootDisk != resources.RootDisk || dataDisk != resources.DataDisk {
+	maxPods, _, _ := unstructured.NestedInt64(request.Object, "spec", "maxPods")
+	if profile != snoImageProfile(environment) || retention != "Delete" || cores != resources.Cores || memory != resources.Memory || rootDisk != resources.RootDisk || dataDisk != resources.DataDisk || maxPods != snoMaxPods(environment) {
 		return waiting, fmt.Errorf("existing SNO request does not match the immutable environment contract")
 	}
 	reference := &corev1.ObjectReference{APIVersion: snoGVK.GroupVersion().String(), Kind: snoGVK.Kind, Namespace: namespace, Name: request.GetName(), UID: request.GetUID()}

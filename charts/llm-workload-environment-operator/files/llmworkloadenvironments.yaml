@@ -190,10 +190,18 @@ spec:
                     maxLength: 63
                     minLength: 1
                     type: string
+                  maxPods:
+                    description: MaxPods optionally overrides the size-based maximum
+                      pods per guest node. When omitted, the SNO provider chooses
+                      500, 1,000, or 2,000 from the CPU tier.
+                    format: int32
+                    maximum: 2000
+                    minimum: 1
+                    type: integer
                   size:
                     default: small
-                    description: Size selects the CPU and memory shape of the SNO
-                      VM.
+                    description: Size selects the SNO VM's CPU, memory, and
+                      workload disk capacity.
                     enum:
                     - small
                     - medium

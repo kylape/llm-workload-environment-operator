@@ -39,6 +39,14 @@ Small/Medium/Large. The provider controls image eligibility and placement; insta
 and configure LVMS in the guest to consume the workload disk. Point its device selector at that
 second disk only (typically `/dev/vdb` after verifying the guest device list) so
 it cannot claim the system disk. LWE does not install LVMS.
+
+The provider sets the guest kubelet pod limit to 500/1,000/2,000 for the
+small/medium/large CPU tiers. Set `spec.sno.maxPods` to override that value;
+valid overrides are 1 through 2,000. The override is immutable with the other
+SNO options. The qualified seed uses a `/21` per-node pod prefix, which
+supports all three tier limits; earlier `/23` seeds supported only the
+500-pod tier.
+
 The provider reads its configured OpenShift pull Secret and copies its contents
 into bootstrap data for the guest. The guest API kubeconfig is published in the
 `sno-credentials` Secret in the SNO request namespace.

@@ -33,6 +33,13 @@ type SNOEnvironmentSpec struct {
 	// +kubebuilder:default=small
 	// +kubebuilder:validation:Enum=small;medium;large
 	Size SNOSize `json:"size,omitempty"`
+
+	// MaxPods optionally overrides the size-based maximum pods per guest node.
+	// When omitted, the SNO provider chooses 500, 1,000, or 2,000 from the CPU tier.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2000
+	MaxPods *int32 `json:"maxPods,omitempty"`
 }
 
 // SNOSize selects a coarse-grained CPU, memory, and workload disk shape for SNO.
