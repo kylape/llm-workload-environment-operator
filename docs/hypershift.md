@@ -288,13 +288,62 @@ An independent random 32-byte etcd encryption key is persisted before each
 cluster is created and retained across reconciliation. Foreign resources and
 replaced identities stop reconciliation and cleanup rather than being adopted.
 
+## Peer groups (cross-guest reachability)
+
+HyperShift's control-plane operator applies a managed NetworkPolicy named
+`virt-launcher` in each guest's control-plane namespace
+(`env-<LWE-name>-cluster`). Its egress rule allows `0.0.0.0/0` **except**
+`10.128.0.0/14` (host pod network) and `172.30.0.0/16` (host service network),
+with narrow carve-outs for same-guest traffic, DNS, the ingress router and the
+API NodePort node. Direct pod-network traffic between two guests is therefore
+dropped, which blocks encapsulated tunnels between guest nodes — for example
+Submariner IPsec cables between LWE guests whose gateways run on the host pod
+network.
+
+An LWE in HyperShift mode may carry the label:
+
+```yaml
+metadata:
+  labels:
+    llm.redhat.com/peer-group: <value>
+```
+
+All LWEs sharing the same value form a peer group. For each labelled LWE, the
+operator:
+
+1. Labels the guest's control-plane namespace `env-<LWE-name>-cluster` with the
+   same `llm.redhat.com/peer-group` label and value.
+2. Ensures an additive NetworkPolicy named `allow-inter-peer-group` in that
+   namespace. The policy selects `kubevirt.io: virt-launcher` pods and permits
+   egress to `kubevirt.io: virt-launcher` pods in namespaces labelled with the
+   same peer-group value, on UDP ports 500 (IKE), 4500 (NAT-T, the Submariner
+   cable) and 4490 (NAT discovery).
+
+NetworkPolicies are additive, so the extra policy unions with HyperShift's
+managed `virt-launcher` policy without modifying or fighting it. The operator
+never touches the managed policy. Removing the label from the LWE, or deleting
+the LWE, removes the namespace label and the `allow-inter-peer-group` policy.
+
+The label convention is domain-neutral: any set of HyperShift LWEs that needs
+encapsulated-UDP reachability between its guest nodes can share a peer-group
+value. Guests in different groups stay isolated from each other.
+
+**UDP encapsulation only.** The peer group permits a fixed set of UDP ports;
+NetworkPolicy cannot express native ESP (IP protocol 50). Consumers building
+tunnels between peers must therefore force UDP encapsulation. For Submariner,
+set `forceUDPEncaps: true` on the site's SubmarinerConfig — a consumer-side
+setting that LWE does not manage. Cross-guest HTTP(S) does not need a peer
+group: it already works through host routes, which the managed policy permits.
+UDP 4800 (VXLAN) is a possible future port addition; it is not opened today.
+
 ## Validation
 
 Unit tests cover creation, scaling readiness, profile policy, durable identity,
 encryption key stability, portable credential validation, TLS API probing,
 cleanup ordering, certificate-before-cluster sequencing, foreign certificate
 resource rejection, stable trust across leaf renewal, shared Route admission,
-and HyperShift Argo CD registration. Helm tests validate the
+peer-group label and policy lifecycle, and HyperShift Argo CD registration.
+Helm tests validate the
 disabled default, profile serialization and malformed input rejection.
 
 ```bash
