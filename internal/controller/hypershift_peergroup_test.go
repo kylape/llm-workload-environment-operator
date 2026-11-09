@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -179,6 +180,36 @@ func TestPeerGroupRejectsForeignPolicy(t *testing.T) {
 	e.Labels = map[string]string{PeerGroupLabel: "grid-a"}
 	if err := r.ensureHyperShiftPeerGroup(ctx, e, "env-test"); err == nil {
 		t.Fatal("foreign policy adopted")
+	}
+}
+
+// forbiddenNetworkPolicyReader simulates a cluster where the operator's RBAC
+// has not been extended with networkpolicies access.
+type forbiddenNetworkPolicyReader struct {
+	client.Client
+}
+
+func (c forbiddenNetworkPolicyReader) Get(ctx context.Context, key client.ObjectKey, object client.Object, opts ...client.GetOption) error {
+	if _, ok := object.(*netv1.NetworkPolicy); ok {
+		return apierrors.NewForbidden(netv1.Resource("networkpolicies"), key.Name, nil)
+	}
+	return c.Client.Get(ctx, key, object, opts...)
+}
+
+func TestPeerGroupRemovalToleratesMissingRBAC(t *testing.T) {
+	ctx := context.Background()
+	r, e := hyperShiftFixture(t)
+	peerGroupClusterNamespace(t, r)
+	r.APIReader = forbiddenNetworkPolicyReader{r.Client}
+	// An unlabelled environment must keep reconciling cleanly when the
+	// operator cannot read NetworkPolicies at all.
+	if err := r.ensureHyperShiftPeerGroup(ctx, e, "env-test"); err != nil {
+		t.Fatalf("removal failed without networkpolicies RBAC: %v", err)
+	}
+	// A labelled environment fails loudly instead of silently skipping.
+	e.Labels = map[string]string{PeerGroupLabel: "grid-a"}
+	if err := r.ensureHyperShiftPeerGroup(ctx, e, "env-test"); err == nil {
+		t.Fatal("missing networkpolicies RBAC was silently accepted for a labelled environment")
 	}
 }
 

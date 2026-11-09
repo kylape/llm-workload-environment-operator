@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	envapi "github.com/kylape/llm-workload-environment-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -12,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -94,30 +94,40 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShiftPeerGroup(
 			return err
 		}
 	}
-	policy := &netv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: PeerGroupNetworkPolicyName, Namespace: clusterNamespace.Name}}
-	err := r.Get(ctx, client.ObjectKeyFromObject(policy), policy)
-	if err != nil && !apierrors.IsNotFound(err) {
+	policy := &netv1.NetworkPolicy{}
+	key := types.NamespacedName{Name: PeerGroupNetworkPolicyName, Namespace: clusterNamespace.Name}
+	err := r.hyperShiftReader().Get(ctx, key, policy)
+	if apierrors.IsNotFound(err) {
+		desired := peerGroupNetworkPolicySpec(value)
+		created := &netv1.NetworkPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: PeerGroupNetworkPolicyName, Namespace: clusterNamespace.Name, Annotations: environmentOwnershipAnnotations(environment)},
+			Spec:       desired,
+		}
+		return r.Create(ctx, created)
+	}
+	if err != nil {
 		return err
 	}
-	if err == nil && !environmentOwns(policy, environment) {
+	if !environmentOwns(policy, environment) {
 		return fmt.Errorf("NetworkPolicy %s/%s is not controlled by this environment", clusterNamespace.Name, PeerGroupNetworkPolicyName)
 	}
-	if apierrors.IsNotFound(err) {
-		policy = &netv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Name: PeerGroupNetworkPolicyName, Namespace: clusterNamespace.Name}}
-	}
 	desired := peerGroupNetworkPolicySpec(value)
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, policy, func() error {
-		markEnvironmentOwned(policy, environment)
+	if !reflect.DeepEqual(policy.Spec, desired) {
+		before := policy.DeepCopy()
 		policy.Spec = desired
-		return nil
-	})
-	return err
+		markEnvironmentOwned(policy, environment)
+		return r.Patch(ctx, policy, client.MergeFromWithOptions(before, client.MergeFromWithOptimisticLock{}))
+	}
+	return nil
 }
 
 // removeHyperShiftPeerGroup deletes the operator-owned inter-peer-group
 // NetworkPolicy and removes the peer-group label from the control-plane
 // namespace. Missing objects are not errors; teardown and label removal
-// share this path.
+// share this path. A Forbidden read is also tolerated: when the operator's
+// RBAC has not been extended with networkpolicies access, the operator
+// cannot have created the policy, so unlabelled and deleting environments
+// keep reconciling instead of failing.
 func (r *LLMWorkloadEnvironmentReconciler) removeHyperShiftPeerGroup(
 	ctx context.Context,
 	environment *envapi.LLMWorkloadEnvironment,
@@ -125,8 +135,8 @@ func (r *LLMWorkloadEnvironmentReconciler) removeHyperShiftPeerGroup(
 ) error {
 	name := hyperShiftClusterNamespace(namespace)
 	policy := &netv1.NetworkPolicy{}
-	if err := r.Get(ctx, types.NamespacedName{Name: PeerGroupNetworkPolicyName, Namespace: name}, policy); err != nil {
-		if !apierrors.IsNotFound(err) {
+	if err := r.hyperShiftReader().Get(ctx, types.NamespacedName{Name: PeerGroupNetworkPolicyName, Namespace: name}, policy); err != nil {
+		if !apierrors.IsNotFound(err) && !apierrors.IsForbidden(err) {
 			return err
 		}
 	} else if environmentOwns(policy, environment) {
