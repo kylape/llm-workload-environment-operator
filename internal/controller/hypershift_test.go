@@ -168,9 +168,11 @@ func TestHyperShiftLifecycle(t *testing.T) {
 	if err := r.Status().Update(ctx, np); err != nil {
 		t.Fatal(err)
 	}
-	if data, ready, err := r.ensureHyperShift(ctx, e, "env-test"); err != nil || !ready || len(data) == 0 {
+	published, ready, err := r.ensureHyperShift(ctx, e, "env-test")
+	if err != nil || !ready || len(published) == 0 {
 		t.Fatalf("guest access ready=%v err=%v", ready, err)
 	}
+	assertKubeconfigIdentity(t, published, e.Name)
 	if !workerStorageClassDefault.Load() || competingStorageClassDefault.Load() {
 		t.Fatal("worker-lvm was not made the sole default StorageClass")
 	}
@@ -352,9 +354,16 @@ func TestHyperShiftCredentialsRejectUnsafeConfiguration(t *testing.T) {
 				bad.AuthInfos["guest"].Impersonate = "admin"
 			}
 			data, _ := clientcmd.Write(*bad)
-			_, err := portableHyperShiftKubeconfig(data, host, port)
+			_, err := portableHyperShiftKubeconfig(data, "test", host, port)
 			if (err == nil) != (test == "valid") {
 				t.Fatalf("unexpected validation: %v", err)
+			}
+			if test == "valid" {
+				published, err := portableHyperShiftKubeconfig(data, "test", host, port)
+				if err != nil {
+					t.Fatalf("valid credentials rejected: %v", err)
+				}
+				assertKubeconfigIdentity(t, published, "test")
 			}
 		})
 	}
@@ -471,10 +480,12 @@ func TestHyperShiftRouteKubeconfigDefaultPort(t *testing.T) {
 	for _, endpoint := range []string{"https://api.example.com", "https://api.example.com:443"} {
 		c.Clusters["guest"].Server = endpoint
 		data, _ := clientcmd.Write(*c)
-		if _, err := portableHyperShiftKubeconfig(data, "api.example.com", 443); err != nil {
+		published, err := portableHyperShiftKubeconfig(data, "test", "api.example.com", 443)
+		if err != nil {
 			t.Fatalf("valid API Route rejected: %v", err)
 		}
-		if _, err := portableHyperShiftKubeconfig(data, "api.example.com", 6443); err == nil {
+		assertKubeconfigIdentity(t, published, "test")
+		if _, err := portableHyperShiftKubeconfig(data, "test", "api.example.com", 6443); err == nil {
 			t.Fatal("mismatched endpoint port accepted")
 		}
 	}

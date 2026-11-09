@@ -135,7 +135,12 @@ func TestSNOExternalCredentialsRequireCurrentReadinessAndOwnedSecret(t *testing.
 	if err = r.Get(context.Background(), request.NamespacedName, current); err != nil {
 		t.Fatal(err)
 	}
-	if !apimeta.IsStatusConditionTrue(current.Status.Conditions, environmentv1alpha1.ReadyCondition) || string(current.Status.Kubeconfig) != string(secret.Data["kubeconfig"]) || result.RequeueAfter == 0 {
+	expected, err := renameKubeconfigIdentity(secret.Data["kubeconfig"], e.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertKubeconfigIdentity(t, current.Status.Kubeconfig, e.Name)
+	if !apimeta.IsStatusConditionTrue(current.Status.Conditions, environmentv1alpha1.ReadyCondition) || string(current.Status.Kubeconfig) != string(expected) || result.RequeueAfter == 0 {
 		t.Fatal("provider access was not handed off and polled")
 	}
 }

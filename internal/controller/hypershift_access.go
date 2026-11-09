@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	envapi "github.com/kylape/llm-workload-environment-operator/api/v1alpha1"
@@ -14,12 +15,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
-func (r *LLMWorkloadEnvironmentReconciler) hyperShiftKubeconfig(ctx context.Context, hc *unstructured.Unstructured) ([]byte, error) {
+func (r *LLMWorkloadEnvironmentReconciler) hyperShiftKubeconfig(ctx context.Context, e *envapi.LLMWorkloadEnvironment, hc *unstructured.Unstructured) ([]byte, error) {
 	name, _, _ := unstructured.NestedString(hc.Object, "status", "kubeconfig", "name")
 	if name == "" {
 		return nil, fmt.Errorf("HostedCluster has not published an administrator kubeconfig")
@@ -39,12 +41,16 @@ func (r *LLMWorkloadEnvironmentReconciler) hyperShiftKubeconfig(ctx context.Cont
 	}
 	host, _, _ := unstructured.NestedString(hc.Object, "status", "controlPlaneEndpoint", "host")
 	port, _, _ := unstructured.NestedInt64(hc.Object, "status", "controlPlaneEndpoint", "port")
-	return portableHyperShiftKubeconfig(s.Data["kubeconfig"], host, port)
+	return portableHyperShiftKubeconfig(s.Data["kubeconfig"], e.Name, host, port)
 }
 
-// Publish a single portable context. Never execute credential plugins or read
-// paths supplied by a provider Secret inside the privileged operator process.
-func portableHyperShiftKubeconfig(data []byte, host string, port int64) ([]byte, error) {
+// Publish a single portable context named after the LWE. Never execute
+// credential plugins or read paths supplied by a provider Secret inside the
+// privileged operator process.
+func portableHyperShiftKubeconfig(data []byte, name, host string, port int64) ([]byte, error) {
+	if errs := validation.IsDNS1123Label(name); len(errs) != 0 {
+		return nil, fmt.Errorf("kubeconfig identity %q is not a valid DNS-1123 label: %s", name, strings.Join(errs, ", "))
+	}
 	c, err := clientcmd.Load(data)
 	if err != nil {
 		return nil, fmt.Errorf("invalid hosted administrator kubeconfig")
@@ -81,10 +87,10 @@ func portableHyperShiftKubeconfig(data []byte, host string, port int64) ([]byte,
 		}
 	}
 	out := clientcmdapi.NewConfig()
-	out.CurrentContext = "environment"
-	out.Contexts["environment"] = &clientcmdapi.Context{Cluster: "environment", AuthInfo: "admin"}
-	out.Clusters["environment"] = &clientcmdapi.Cluster{Server: cluster.Server, CertificateAuthorityData: cluster.CertificateAuthorityData, TLSServerName: cluster.TLSServerName}
-	out.AuthInfos["admin"] = &clientcmdapi.AuthInfo{Token: auth.Token, ClientCertificateData: auth.ClientCertificateData, ClientKeyData: auth.ClientKeyData}
+	out.CurrentContext = name
+	out.Contexts[name] = &clientcmdapi.Context{Cluster: name, AuthInfo: name}
+	out.Clusters[name] = &clientcmdapi.Cluster{Server: cluster.Server, CertificateAuthorityData: cluster.CertificateAuthorityData, TLSServerName: cluster.TLSServerName}
+	out.AuthInfos[name] = &clientcmdapi.AuthInfo{Token: auth.Token, ClientCertificateData: auth.ClientCertificateData, ClientKeyData: auth.ClientKeyData}
 	return clientcmd.Write(*out)
 }
 
@@ -151,5 +157,5 @@ func (r *LLMWorkloadEnvironmentReconciler) hyperShiftIngressKubeconfig(ctx conte
 	if err != nil {
 		return nil, err
 	}
-	return portableHyperShiftKubeconfig(rewritten, host, 443)
+	return portableHyperShiftKubeconfig(rewritten, e.Name, host, 443)
 }

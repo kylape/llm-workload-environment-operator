@@ -529,8 +529,8 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespaceKubeconfig(
 		server,
 		tokenSecret.Data[corev1.ServiceAccountRootCAKey],
 		tokenSecret.Data[corev1.ServiceAccountTokenKey],
-		environment.Namespace+"/"+environment.Name,
-		NamespaceKubeconfigServiceAccountName,
+		environment.Name,
+		environment.Name,
 	)
 	if err != nil {
 		return nil, false, err
@@ -732,6 +732,12 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureVCluster(
 		if err != nil {
 			return nil, false, fmt.Errorf("rewrite vCluster kubeconfig for public endpoint %s: %w", server, err)
 		}
+	}
+	// Name the published context, cluster, and user after the LWE so merged
+	// kubeconfigs cannot collide on vCluster's generic identity names.
+	kubeconfig, err = renameKubeconfigIdentity(kubeconfig, environment.Name)
+	if err != nil {
+		return nil, false, fmt.Errorf("rename vCluster kubeconfig identity: %w", err)
 	}
 	return kubeconfig, true, nil
 }

@@ -287,6 +287,7 @@ func TestEnsureNamespaceKubeconfig(t *testing.T) {
 			t.Fatalf("kubeconfig does not contain %q: %s", expected, contents)
 		}
 	}
+	assertKubeconfigIdentity(t, kubeconfig, environment.Name)
 	legacySecret := &corev1.Secret{}
 	if err := client.Get(ctx, types.NamespacedName{Name: "environment-example-kubeconfig", Namespace: environment.Namespace}, legacySecret); !apierrors.IsNotFound(err) {
 		t.Fatalf("expected no published kubeconfig Secret, got secret=%#v err=%v", legacySecret, err)
@@ -466,7 +467,7 @@ func TestEnsureVClusterUsesDetectedPlatformAndScopedBinding(t *testing.T) {
 	}
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "vc-example", Namespace: namespace},
-		Data:       map[string][]byte{"config": []byte("apiVersion: v1\nclusters:\n- cluster:\n    certificate-authority-data: Y2E=\n    server: https://vc-example.env-example.svc\n  name: vcluster\n")},
+		Data: map[string][]byte{"config": []byte("apiVersion: v1\nclusters:\n- cluster:\n    certificate-authority-data: Y2E=\n    server: https://vc-example.env-example.svc\n  name: vcluster\ncontexts:\n- context:\n    cluster: vcluster\n    user: vcluster\n  name: vcluster\ncurrent-context: vcluster\nkind: Config\nusers:\n- name: vcluster\n  user:\n    token: vc-token\n")},
 	}
 	ingress := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "config.openshift.io/v1",
@@ -491,6 +492,7 @@ func TestEnsureVClusterUsesDetectedPlatformAndScopedBinding(t *testing.T) {
 	if !ready || len(kubeconfig) == 0 {
 		t.Fatalf("unexpected vCluster readiness: ready=%v kubeconfig=%q", ready, kubeconfig)
 	}
+	assertKubeconfigIdentity(t, kubeconfig, environment.Name)
 	if installer.calls != 1 || !installer.openShift || installer.publicHost != "example.apps.example.test" {
 		t.Fatalf("installer did not receive OpenShift detection: %#v", installer)
 	}

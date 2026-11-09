@@ -47,6 +47,11 @@ In `Namespace` mode, the operator also creates a dedicated ServiceAccount in
 the backing namespace. Once Kubernetes has populated its token Secret, the operator
 publishes the base64-encoded kubeconfig in `status.kubeconfig`.
 
+In every mode, the published kubeconfig names its context, cluster, and user
+after the LWE's `metadata.name` and sets `current-context` to that name, so
+several LWE kubeconfigs can be merged through `KUBECONFIG` without name
+collisions.
+
 For `VCluster` mode, the operator also installs the pinned vCluster chart and
 publishes its base64-encoded kubeconfig in status. On OpenShift, it also creates a
 TLS-passthrough Route at

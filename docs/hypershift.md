@@ -162,7 +162,13 @@ kubectl delete llmworkloadenvironment my-openshift -n workload-requests
 `status.kubeconfig` grants guest cluster administrator access. Restrict read
 access to LWE resources accordingly. LWE publishes only the provider's current
 context, with embedded CA and credentials, after verifying the API endpoint,
-TLS trust and authenticated API access. `APIAccessible=True` and the kubeconfig
+TLS trust and authenticated API access. The published kubeconfig names its
+context, cluster, and user after the LWE's `metadata.name` (for example
+`my-openshift`) and sets `current-context` to that name, so merging several
+LWE kubeconfigs through `KUBECONFIG` cannot collide: generic names such as
+`admin` would otherwise make the first file's definitions silently win and
+point one context at the wrong cluster with the wrong credentials. Names are
+stable across re-fetches. `APIAccessible=True` and the kubeconfig
 can appear while there are zero workers or installation is still progressing.
 Clients can apply available resource types immediately; Pods remain Pending
 until capacity is ready, and APIs supplied by operators might not exist yet.

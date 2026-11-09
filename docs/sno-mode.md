@@ -64,6 +64,10 @@ readiness check. It accepts only portable credentials with an embedded guest
 CA, TLS verification, and the published HTTPS API URL.
 It publishes the kubeconfig using the existing base64 `status.kubeconfig`
 contract and records `status.snoVirtualMachineRef` for identity and deletion.
+On publish, LWE rewrites the provider's generic context, cluster, and user
+names to the LWE's `metadata.name` (and sets `current-context` to it), so
+merged kubeconfigs from several environments cannot collide on duplicate
+generic names; the provider's Secret itself is left unchanged.
 Readers of the LWE resource can obtain its administrator kubeconfig; constrain
 that access with namespace RBAC.
 

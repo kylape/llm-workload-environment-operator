@@ -189,7 +189,13 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureSNO(ctx context.Context, enviro
 	if err != nil {
 		return snoObservation{Reason: "SNOAPINotReady", Message: "Provider credentials are published; waiting for the authenticated guest API readiness check"}, nil
 	}
-	return snoObservation{Ready: true, Kubeconfig: append([]byte(nil), kubeconfig...)}, nil
+	// Rewrite the provider's generic context/cluster/user names on publish;
+	// the provider contract itself is unchanged.
+	published, err := renameKubeconfigIdentity(kubeconfig, environment.Name)
+	if err != nil {
+		return waiting, err
+	}
+	return snoObservation{Ready: true, Kubeconfig: published}, nil
 }
 
 func validateSNOAccess(data []byte, endpoint string) error {

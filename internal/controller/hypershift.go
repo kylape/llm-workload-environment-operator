@@ -210,7 +210,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if kubeconfigName == "" || host == "" || port == 0 {
 		return nil, false, nil
 	}
-	config, err := r.hyperShiftKubeconfig(ctx, hc)
+	config, err := r.hyperShiftKubeconfig(ctx, e, hc)
 	if apierrors.IsNotFound(err) {
 		return nil, false, nil
 	}
