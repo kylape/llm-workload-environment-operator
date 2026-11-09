@@ -3,11 +3,11 @@
 LLM Workload Environment Operator provisions isolated Kubernetes environments
 for LLM development, serving, and performance testing. It provides a declarative
 boundary between clients such as `infra` or a future UI and cluster services
-such as Kueue, vCluster, and HyperShift.
+such as Kueue, vCluster, HyperShift, and the SNO VM provider.
 
-The operator provisions a host-cluster namespace, vCluster, or hosted OpenShift
-cluster for each
-namespaced `LLMWorkloadEnvironment` resource. The resource namespace is the
+The operator provisions one of a host-cluster namespace, vCluster, hosted
+OpenShift cluster, or independent SNO virtual machine for each namespaced
+`LLMWorkloadEnvironment` resource. The resource namespace is the
 control boundary: the infra service can manage environments across namespaces, while
 direct users can be limited to a namespace by ordinary Kubernetes RBAC.
 
@@ -47,6 +47,11 @@ In `Namespace` mode, the operator also creates a dedicated ServiceAccount in
 the backing namespace. Once Kubernetes has populated its token Secret, the operator
 publishes the base64-encoded kubeconfig in `status.kubeconfig`.
 
+In every mode, the published kubeconfig names its context, cluster, and user
+after the LWE's `metadata.name` and sets `current-context` to that name, so
+several LWE kubeconfigs can be merged through `KUBECONFIG` without name
+collisions.
+
 For `VCluster` mode, the operator also installs the pinned vCluster chart and
 publishes its base64-encoded kubeconfig in status. On OpenShift, it also creates a
 TLS-passthrough Route at
@@ -74,6 +79,12 @@ existing ingress on port 443. Worker connectivity retains native NodePorts.
 Guest Routes use HyperShift host ingress passthrough. See
 [HyperShift setup and usage](docs/hypershift.md)
 and the [example request](config/samples/hypershift.yaml).
+
+For `SNO` mode, LWE delegates an independent OpenShift VM to the SNO VM
+provider, waits for its guest API and portable credentials, and publishes the
+guest kubeconfig in status. The provider API and a qualified cached seed image
+must be installed by an administrator. See [SNO mode](docs/sno-mode.md) and
+the [example request](config/samples/llm_v1alpha1_llmworkloadenvironment_sno.yaml).
 
 The reusable environment role does not permit its subjects to mutate LocalQueues,
 cluster RBAC, or CRDs. Kueue queue selection remains controlled by the operator.

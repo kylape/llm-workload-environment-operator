@@ -200,6 +200,16 @@ rules:
       - patch
       - delete
   - apiGroups:
+      - networking.k8s.io
+    resources:
+      - networkpolicies
+    verbs:
+      - get
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
       - cert-manager.io
     resources:
       - certificates
@@ -213,3 +223,11 @@ rules:
       - hostedcontrolplanes
     verbs:
       - get
+  - apiGroups:
+      - sno.llm-d.io
+    resources:
+      - snovirtualmachines
+    verbs:
+      - get
+      - create
+      - delete

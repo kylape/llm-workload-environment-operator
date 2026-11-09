@@ -19,6 +19,36 @@ const (
 	EnvironmentModeNamespace  EnvironmentMode = "Namespace"
 	EnvironmentModeVCluster   EnvironmentMode = "VCluster"
 	EnvironmentModeHyperShift EnvironmentMode = "HyperShift"
+	EnvironmentModeSNO        EnvironmentMode = "SNO"
+)
+
+type SNOEnvironmentSpec struct {
+	// ImageProfile selects an administrator-qualified preinstalled SNO image.
+	// +kubebuilder:default=default
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	ImageProfile string `json:"imageProfile,omitempty"`
+
+	// Size selects the SNO VM's CPU, memory, and workload disk capacity.
+	// +kubebuilder:default=small
+	// +kubebuilder:validation:Enum=small;medium;large
+	Size SNOSize `json:"size,omitempty"`
+
+	// MaxPods optionally overrides the size-based maximum pods per guest node.
+	// When omitted, the SNO provider chooses 500, 1,000, or 2,000 from the CPU tier.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2000
+	MaxPods *int32 `json:"maxPods,omitempty"`
+}
+
+// SNOSize selects a coarse-grained CPU, memory, and workload disk shape for SNO.
+type SNOSize string
+
+const (
+	SNOSizeSmall  SNOSize = "small"
+	SNOSizeMedium SNOSize = "medium"
+	SNOSizeLarge  SNOSize = "large"
 )
 
 // +kubebuilder:validation:XValidation:rule="!has(self.pullSecret) || size(self.pullSecret.name) > 0",message="pullSecret.name must be set when pullSecret is specified"
@@ -102,12 +132,14 @@ const (
 )
 
 // +kubebuilder:validation:XValidation:rule="!has(self.hypershift) || self.mode == 'HyperShift'",message="hypershift options require HyperShift mode"
+// +kubebuilder:validation:XValidation:rule="!has(self.sno) || self.mode == 'SNO'",message="sno options require SNO mode"
 // +kubebuilder:validation:XValidation:rule="self.mode != 'HyperShift' || (has(self.hypershift) && has(self.hypershift.profile) ? self.hypershift.profile : 'default') == (has(oldSelf.hypershift) && has(oldSelf.hypershift.profile) ? oldSelf.hypershift.profile : 'default')",message="HyperShift profile is immutable"
 // +kubebuilder:validation:XValidation:rule="self.mode != 'HyperShift' || (has(self.hypershift) && has(self.hypershift.size) ? self.hypershift.size : 'small') == (has(oldSelf.hypershift) && has(oldSelf.hypershift.size) ? oldSelf.hypershift.size : 'small')",message="HyperShift size is immutable"
+// +kubebuilder:validation:XValidation:rule="self.mode != 'SNO' || ((!has(self.sno) && !has(oldSelf.sno)) || (has(self.sno) && has(oldSelf.sno) && self.sno == oldSelf.sno))",message="SNO options are immutable"
 type LLMWorkloadEnvironmentSpec struct {
-	// Mode selects a host namespace, vCluster, or hosted OpenShift cluster.
+	// Mode selects a host namespace, vCluster, hosted OpenShift cluster, or SNO VM.
 	// +kubebuilder:default=Namespace
-	// +kubebuilder:validation:Enum=Namespace;VCluster;HyperShift
+	// +kubebuilder:validation:Enum=Namespace;VCluster;HyperShift;SNO
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="mode is immutable"
 	Mode EnvironmentMode `json:"mode,omitempty"`
 
@@ -120,6 +152,10 @@ type LLMWorkloadEnvironmentSpec struct {
 	// HyperShift configures a hosted OpenShift cluster with KubeVirt workers.
 	// +optional
 	HyperShift *HyperShiftEnvironmentSpec `json:"hypershift,omitempty"`
+
+	// SNO configures an independent preinstalled Single Node OpenShift VM through the SNO provider.
+	// +optional
+	SNO *SNOEnvironmentSpec `json:"sno,omitempty"`
 
 	// ClusterQueue is the Kueue ClusterQueue that backs the environment's
 	// default LocalQueue.
@@ -151,8 +187,12 @@ type LLMWorkloadEnvironmentStatus struct {
 	// NodePoolRef records the established worker pool identity.
 	NodePoolRef *corev1.ObjectReference `json:"nodePoolRef,omitempty"`
 
+	// SNOVirtualMachineRef identifies the provider request for a Single Node OpenShift VM.
+	SNOVirtualMachineRef *corev1.ObjectReference `json:"snoVirtualMachineRef,omitempty"`
+
 	// Kubeconfig contains a base64-encoded kubeconfig for verified API access.
 	// HyperShift may publish it before workers and full installation are Ready.
+	// SNO publishes it after the provider verifies guest readiness and identity.
 	Kubeconfig []byte `json:"kubeconfig,omitempty"`
 
 	// ArgoCDClusterSecretRef records the registration Secret to reconcile or clean

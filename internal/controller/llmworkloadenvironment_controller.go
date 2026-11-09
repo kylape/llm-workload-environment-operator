@@ -68,6 +68,7 @@ type LLMWorkloadEnvironmentReconciler struct {
 	KueueAdmission  *KueueAdmissionConfig
 	HyperShift      *HyperShiftConfig
 	Expiration      *ExpirationConfig
+	SNOAPIProbe     func(context.Context, []byte) error
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -89,6 +90,13 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{Requeue: true}, nil
 	}
 	if apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ExpiredCondition) {
+		done, err := r.cleanupEnvironmentResources(ctx, environment, namespaceName)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if !done {
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 	if isEnvironmentExpired(environment, time.Now()) && !expirationExempt(environment) {
@@ -209,6 +217,15 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 			return r.notReady(ctx, environment, namespaceName, "VClusterNotReady", "vCluster control plane or public API LoadBalancer is starting", 5*time.Second, nil)
 		}
 		kubeconfig = config
+	} else if environmentMode(environment) == environmentv1alpha1.EnvironmentModeSNO {
+		observation, err := r.ensureSNO(ctx, environment, namespaceName)
+		if err != nil {
+			return r.notReady(ctx, environment, namespaceName, "SNOProvisioningFailed", err.Error(), 30*time.Second, err)
+		}
+		if !observation.Ready {
+			return r.notReady(ctx, environment, namespaceName, observation.Reason, observation.Message, 5*time.Second, nil)
+		}
+		kubeconfig = observation.Kubeconfig
 	} else {
 		config, ready, err := r.ensureNamespaceKubeconfig(ctx, environment, namespaceName)
 		if err != nil {
@@ -223,7 +240,7 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 	if err := r.setReady(ctx, environment, namespaceName, kubeconfig, metav1.ConditionTrue, "Ready", "Environment is ready"); err != nil {
 		return ctrl.Result{}, err
 	}
-	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
+	if mode := environmentMode(environment); mode == environmentv1alpha1.EnvironmentModeHyperShift || mode == environmentv1alpha1.EnvironmentModeSNO {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 	if config := r.kueueAdmissionConfig(); config.Enabled && config.ValidationEnabled {
@@ -331,10 +348,14 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespace(
 }
 
 func environmentNamespaceLabels(environment *environmentv1alpha1.LLMWorkloadEnvironment) map[string]string {
-	return map[string]string{
+	labels := map[string]string{
 		"app.kubernetes.io/managed-by": "llm-workload-environment-operator",
 		"llm.redhat.com/environment":   environment.Name,
 	}
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeSNO {
+		labels["sno.klape.io/enabled"] = "true"
+	}
+	return labels
 }
 
 func environmentOwnershipAnnotations(environment *environmentv1alpha1.LLMWorkloadEnvironment) map[string]string {
@@ -508,8 +529,8 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureNamespaceKubeconfig(
 		server,
 		tokenSecret.Data[corev1.ServiceAccountRootCAKey],
 		tokenSecret.Data[corev1.ServiceAccountTokenKey],
-		environment.Namespace+"/"+environment.Name,
-		NamespaceKubeconfigServiceAccountName,
+		environment.Name,
+		environment.Name,
 	)
 	if err != nil {
 		return nil, false, err
@@ -712,6 +733,12 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureVCluster(
 			return nil, false, fmt.Errorf("rewrite vCluster kubeconfig for public endpoint %s: %w", server, err)
 		}
 	}
+	// Name the published context, cluster, and user after the LWE so merged
+	// kubeconfigs cannot collide on vCluster's generic identity names.
+	kubeconfig, err = renameKubeconfigIdentity(kubeconfig, environment.Name)
+	if err != nil {
+		return nil, false, fmt.Errorf("rename vCluster kubeconfig identity: %w", err)
+	}
 	return kubeconfig, true, nil
 }
 
@@ -759,10 +786,15 @@ func (r *LLMWorkloadEnvironmentReconciler) setReady(
 		Reason:             reason,
 		Message:            message,
 	})
-	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
+	mode := environmentMode(environment)
+	if mode == environmentv1alpha1.EnvironmentModeHyperShift || mode == environmentv1alpha1.EnvironmentModeSNO {
 		apiStatus, apiReason, apiMessage := metav1.ConditionFalse, "APIUnavailable", "Verified guest API credentials are not available"
 		if len(kubeconfig) != 0 {
-			apiStatus, apiReason, apiMessage = metav1.ConditionTrue, "APIReachable", "Authenticated guest API is accessible; kubeconfig is available"
+			apiMessage = "Authenticated guest API is accessible; kubeconfig is available"
+			if mode == environmentv1alpha1.EnvironmentModeSNO {
+				apiMessage = "Authenticated SNO guest API is accessible; kubeconfig is available"
+			}
+			apiStatus, apiReason = metav1.ConditionTrue, "APIReachable"
 		}
 		apimeta.SetStatusCondition(&environment.Status.Conditions, metav1.Condition{
 			Type: environmentv1alpha1.APIAccessibleCondition, Status: apiStatus,
@@ -796,23 +828,52 @@ func (r *LLMWorkloadEnvironmentReconciler) finalize(
 		return ctrl.Result{}, nil
 	}
 
+	done, err := r.cleanupEnvironmentResources(ctx, environment, namespaceName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if !done {
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	}
+
+	controllerutil.RemoveFinalizer(environment, FinalizerName)
+	return ctrl.Result{}, r.Update(ctx, environment)
+}
+
+// cleanupEnvironmentResources is shared by deletion and expiration. In SNO mode
+// it drains the provider request before removing the backing namespace.
+func (r *LLMWorkloadEnvironmentReconciler) cleanupEnvironmentResources(
+	ctx context.Context,
+	environment *environmentv1alpha1.LLMWorkloadEnvironment,
+	namespaceName string,
+) (bool, error) {
+
 	if err := r.finalizeArgoCDRegistration(ctx, environment); err != nil {
 		if errors.Is(err, errArgoCDCleanupPending) {
-			return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+			return false, nil
 		}
-		return ctrl.Result{}, err
+		return false, err
 	}
 
 	if err := r.removeLegacyKubeconfigSecret(ctx, environment); err != nil {
-		return ctrl.Result{}, err
+		return false, err
 	}
 	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
 		done, err := r.finalizeHyperShift(ctx, environment, namespaceName)
 		if err != nil {
-			return ctrl.Result{}, err
+			return false, err
 		}
 		if !done {
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			return false, nil
+		}
+	}
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeSNO {
+		done, err := r.finalizeSNO(ctx, environment, namespaceName)
+		if err != nil {
+			return false, err
+		}
+		if !done {
+			return false, nil
 		}
 	}
 
@@ -821,12 +882,12 @@ func (r *LLMWorkloadEnvironmentReconciler) finalize(
 	err := r.Get(ctx, types.NamespacedName{Name: bindingName}, binding)
 	if err == nil && environmentOwns(binding, environment) {
 		if err := r.Delete(ctx, binding); err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, err
+			return false, err
 		}
-		return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		return false, nil
 	}
 	if err != nil && !apierrors.IsNotFound(err) {
-		return ctrl.Result{}, err
+		return false, err
 	}
 
 	namespace := &corev1.Namespace{}
@@ -834,17 +895,15 @@ func (r *LLMWorkloadEnvironmentReconciler) finalize(
 	if err == nil && environmentOwns(namespace, environment) {
 		if namespace.DeletionTimestamp == nil {
 			if err := r.Delete(ctx, namespace); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, err
+				return false, err
 			}
 		}
-		return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		return false, nil
 	}
 	if err != nil && !apierrors.IsNotFound(err) {
-		return ctrl.Result{}, err
+		return false, err
 	}
-
-	controllerutil.RemoveFinalizer(environment, FinalizerName)
-	return ctrl.Result{}, r.Update(ctx, environment)
+	return true, nil
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) SetupWithManager(mgr ctrl.Manager) error {

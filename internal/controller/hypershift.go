@@ -139,6 +139,9 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if err := r.recordHyperShiftReference(ctx, e, hc); err != nil {
 		return nil, false, err
 	}
+	if err := r.ensureHyperShiftPeerGroup(ctx, e, namespace); err != nil {
+		return nil, false, err
+	}
 	scaling := false
 	np := hyperShiftObject(nodePoolGVK, namespace, "workers")
 	err = r.hyperShiftReader().Get(ctx, client.ObjectKeyFromObject(np), np)
@@ -207,7 +210,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShift(ctx context.Context,
 	if kubeconfigName == "" || host == "" || port == 0 {
 		return nil, false, nil
 	}
-	config, err := r.hyperShiftKubeconfig(ctx, hc)
+	config, err := r.hyperShiftKubeconfig(ctx, e, hc)
 	if apierrors.IsNotFound(err) {
 		return nil, false, nil
 	}
@@ -441,6 +444,12 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShiftSecret(ctx context.Co
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) finalizeHyperShift(ctx context.Context, e *envapi.LLMWorkloadEnvironment, ns string) (bool, error) {
+	// Remove peer-group artifacts before destroying the cluster. HyperShift
+	// eventually deletes the control-plane namespace with the HostedCluster,
+	// but explicit removal also covers label withdrawal and partial states.
+	if err := r.removeHyperShiftPeerGroup(ctx, e, ns); err != nil {
+		return false, err
+	}
 	var existing []*unstructured.Unstructured
 	for _, resource := range []struct {
 		gvk  schema.GroupVersionKind

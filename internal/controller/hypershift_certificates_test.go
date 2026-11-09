@@ -214,10 +214,11 @@ func TestHyperShiftIngressKubeconfigAndRenewal(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, _ := clientcmd.Load(first)
-	if out.Clusters["environment"].Server != "https://"+hyperShiftAPIHost(e, p)+":443" || out.Clusters["environment"].InsecureSkipTLSVerify || out.Clusters["environment"].TLSServerName != "" || out.AuthInfos["admin"].Token != "guest-admin-token" {
+	assertKubeconfigIdentity(t, first, e.Name)
+	if out.Clusters[e.Name].Server != "https://"+hyperShiftAPIHost(e, p)+":443" || out.Clusters[e.Name].InsecureSkipTLSVerify || out.Clusters[e.Name].TLSServerName != "" || out.AuthInfos[e.Name].Token != "guest-admin-token" {
 		t.Fatal("invalid ingress kubeconfig")
 	}
-	if string(out.Clusters["environment"].CertificateAuthorityData) != string(leaf.Data["ca.crt"]) {
+	if string(out.Clusters[e.Name].CertificateAuthorityData) != string(leaf.Data["ca.crt"]) {
 		t.Fatal("kubeconfig does not trust issuer CA")
 	}
 	renewed := testAPILeaf(t, e, hyperShiftAPIHost(e, p), ca, key)
