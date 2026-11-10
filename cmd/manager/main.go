@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	environmentv1alpha1 "github.com/kylape/llm-workload-environment-operator/api/v1alpha1"
@@ -50,6 +51,18 @@ func main() {
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOptions)))
 
 	argoCDNamespace := os.Getenv("ARGOCD_NAMESPACE")
+
+	// Namespaces that hold the shared inference gateway infrastructure; every
+	// Namespace-mode environment gets read and port-forward access there.
+	// Comma-separated; defaults to openshift-ingress,redhat-ods-applications.
+	var gatewayNamespaces []string
+	if raw := os.Getenv("GATEWAY_NAMESPACES"); raw != "" {
+		for _, namespace := range strings.Split(raw, ",") {
+			if namespace = strings.TrimSpace(namespace); namespace != "" {
+				gatewayNamespaces = append(gatewayNamespaces, namespace)
+			}
+		}
+	}
 	if err := environmentcontroller.ValidateArgoCDNamespace(argoCDNamespace); err != nil {
 		ctrl.Log.Error(err, "invalid Argo CD registration configuration")
 		os.Exit(1)
@@ -123,6 +136,7 @@ func main() {
 		KueueAdmission:    &kueueAdmission,
 		HyperShift:        hyperShift,
 		Expiration:        &expiration,
+		GatewayNamespaces: gatewayNamespaces,
 	}).SetupWithManager(manager); err != nil {
 		ctrl.Log.Error(err, "unable to create controller")
 		os.Exit(1)

@@ -109,6 +109,13 @@ class HelmChartTests(unittest.TestCase):
                 dep = deployment(resources({"image": image}))
                 self.assertEqual(dep["spec"]["template"]["spec"]["containers"][0]["image"], expected)
 
+    def test_gateway_namespaces_env_is_optional_and_serialized(self):
+        # Default: no GATEWAY_NAMESPACES env var; the operator falls back to
+        # its built-in defaults.
+        self.assertNotIn("GATEWAY_NAMESPACES", environment(resources()))
+        env = environment(resources({"gatewayNamespaces": ["openshift-ingress", "custom-gw-ns"]}))
+        self.assertEqual(env["GATEWAY_NAMESPACES"], "openshift-ingress,custom-gw-ns")
+
     def test_canonical_crd_and_clusterrole_permissions(self):
         objects = resources()
         crd = next(obj for obj in objects if obj["kind"] == "CustomResourceDefinition")

@@ -47,6 +47,10 @@ spec:
               value: {{ .Values.hypershift | toJson | quote }}
             - name: KUEUE_CONFIG_REF
               value: {{ .Values.kueue.configRef | quote }}
+            {{- if .Values.gatewayNamespaces }}
+            - name: GATEWAY_NAMESPACES
+              value: {{ .Values.gatewayNamespaces | join "," | quote }}
+            {{- end }}
           ports:
             - containerPort: 8081
               name: health

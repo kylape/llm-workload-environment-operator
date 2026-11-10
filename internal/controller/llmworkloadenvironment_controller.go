@@ -68,7 +68,11 @@ type LLMWorkloadEnvironmentReconciler struct {
 	KueueAdmission  *KueueAdmissionConfig
 	HyperShift      *HyperShiftConfig
 	Expiration      *ExpirationConfig
-	SNOAPIProbe     func(context.Context, []byte) error
+	// GatewayNamespaces lists the namespaces that hold the shared inference
+	// gateway infrastructure; environment credentials get read and
+	// port-forward access there. Empty means DefaultGatewayNamespaces.
+	GatewayNamespaces []string
+	SNOAPIProbe       func(context.Context, []byte) error
 }
 
 func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -166,6 +170,9 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileEnvironment(
 	}
 	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeNamespace {
 		if err := r.ensureNamespaceServiceAccountAccess(ctx, environment, namespaceName); err != nil {
+			return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
+		}
+		if err := r.ensureGatewayAccess(ctx, environment, namespaceName); err != nil {
 			return r.notReady(ctx, environment, namespaceName, "ReconciliationFailed", err.Error(), 0, err)
 		}
 	} else if err := r.removeLegacyVClusterAccess(ctx, environment, namespaceName); err != nil {
@@ -351,6 +358,9 @@ func environmentNamespaceLabels(environment *environmentv1alpha1.LLMWorkloadEnvi
 	labels := map[string]string{
 		"app.kubernetes.io/managed-by": "llm-workload-environment-operator",
 		"llm.redhat.com/environment":   environment.Name,
+		// RHOAI 3.5+ inference gateways accept routes only from namespaces
+		// carrying this label (odh-gitops PR#156).
+		"inference-gateway-access": "true",
 	}
 	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeSNO {
 		labels["sno.klape.io/enabled"] = "true"
@@ -857,6 +867,11 @@ func (r *LLMWorkloadEnvironmentReconciler) cleanupEnvironmentResources(
 
 	if err := r.removeLegacyKubeconfigSecret(ctx, environment); err != nil {
 		return false, err
+	}
+	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeNamespace {
+		if err := r.removeGatewayAccess(ctx, environment); err != nil {
+			return false, err
+		}
 	}
 	if environmentMode(environment) == environmentv1alpha1.EnvironmentModeHyperShift {
 		done, err := r.finalizeHyperShift(ctx, environment, namespaceName)

@@ -36,6 +36,12 @@ rules:
   - apiGroups:
       - ""
     resources:
+      - serviceaccounts/token
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resources:
       - pods/ephemeralcontainers
     verbs:
       - get
@@ -156,6 +162,19 @@ rules:
       - update
       - watch
   - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
       - serving.kserve.io
     resources:
       - inferenceservices
@@ -185,6 +204,28 @@ rules:
       - update
       - watch
   - apiGroups:
+      - inference.networking.k8s.io
+    resources:
+      - inferencepools
+    verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - gateway.networking.k8s.io
+    resources:
+      - gateways
+      - httproutes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - leaderworkerset.x-k8s.io
     resources:
       - leaderworkersets
@@ -202,6 +243,43 @@ rules:
     resources:
       - localqueues
       - workloads
+    verbs:
+      - get
+      - list
+      - watch
+---
+# Grants environment credentials read and port-forward access to the shared
+# inference gateway infrastructure. The operator binds this role, via a
+# RoleBinding named "environment-gateway-access", in each configured gateway
+# namespace (see GATEWAY_NAMESPACES) for every Namespace-mode environment, so
+# tooling such as inference-e2e can resolve and reach the Gateway an
+# LLMInferenceService routes through (services, gateway status, and
+# port-forwarding to gateway pods).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: llm-workload-environment-gateway-user
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods/portforward
+    verbs:
+      - create
+      - get
+  - apiGroups:
+      - gateway.networking.k8s.io
+    resources:
+      - gateways
     verbs:
       - get
       - list
@@ -286,6 +364,7 @@ rules:
       - clusterroles
     resourceNames:
       - llm-workload-environment-user
+      - llm-workload-environment-gateway-user
       - llm-workload-environment-vcluster
     verbs:
       - bind

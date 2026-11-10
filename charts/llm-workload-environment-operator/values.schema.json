@@ -15,7 +15,8 @@
     "nodeSelector",
     "tolerations",
     "affinity",
-    "hypershift"
+    "hypershift",
+    "gatewayNamespaces"
   ],
   "properties": {
     "platform": {
@@ -25,6 +26,14 @@
         "coreweave",
         "openshift"
       ]
+    },
+    "gatewayNamespaces": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+        "maxLength": 63
+      }
     },
     "image": {
       "type": "object",
