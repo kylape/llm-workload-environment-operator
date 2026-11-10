@@ -6,4 +6,5 @@ resources:
   - role_binding.yaml
   - requester_role.yaml
   - environment_role.yaml
+  - gateway_role.yaml
   - vcluster_role.yaml

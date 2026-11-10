@@ -30,6 +30,11 @@ kueue:
   namespaceLabels: {}
   configRef: kueue-system:kueue-manager-config:controller_manager_config.yaml
 
+# Namespaces holding the shared inference gateway infrastructure; every
+# Namespace-mode environment gets read and port-forward access there.
+# Empty uses the operator default (openshift-ingress,redhat-ods-applications).
+gatewayNamespaces: []
+
 # HyperShift and OpenShift Virtualization must already be installed on the host.
 # Profiles contain references to administrator-managed Secrets, never secret data.
 hypershift:

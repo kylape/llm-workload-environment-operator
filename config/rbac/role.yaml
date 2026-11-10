@@ -59,6 +59,7 @@ rules:
       - clusterroles
     resourceNames:
       - llm-workload-environment-user
+      - llm-workload-environment-gateway-user
       - llm-workload-environment-vcluster
     verbs:
       - bind
