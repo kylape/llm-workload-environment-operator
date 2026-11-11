@@ -23,10 +23,22 @@ const (
 	// GatewayAccessRoleName is the ClusterRole bound to environment credentials
 	// in the shared gateway namespaces.
 	GatewayAccessRoleName = "llm-workload-environment-gateway-user"
-	// GatewayAccessBindingName is the name of the RoleBinding the operator
-	// creates for each environment in every configured gateway namespace.
-	GatewayAccessBindingName = "environment-gateway-access"
+	// gatewayAccessBindingSuffix is appended to the environment name to form
+	// the per-environment RoleBinding name in gateway namespaces.
+	gatewayAccessBindingSuffix = "-gateway-access"
 )
+
+// gatewayAccessBindingName is the RoleBinding name an environment owns in each
+// gateway namespace. It is derived from the environment name (like the
+// vCluster ClusterRoleBinding) so concurrent environments each get their own
+// binding instead of fighting over one shared object.
+func gatewayAccessBindingName(environment *environmentv1alpha1.LLMWorkloadEnvironment) string {
+	name := environment.Name + gatewayAccessBindingSuffix
+	if len(name) > 253 {
+		name = name[:253]
+	}
+	return name
+}
 
 // DefaultGatewayNamespaces are the namespaces that hold the inference gateway
 // infrastructure on the supported platforms: openshift-ingress on OpenShift
@@ -56,11 +68,12 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureGatewayAccess(
 			return fmt.Errorf("get gateway namespace %q: %w", gatewayNamespace, err)
 		}
 
-		binding := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: GatewayAccessBindingName, Namespace: gatewayNamespace}}
-		if err := r.Get(ctx, types.NamespacedName{Name: GatewayAccessBindingName, Namespace: gatewayNamespace}, binding); err != nil && !apierrors.IsNotFound(err) {
+		bindingName := gatewayAccessBindingName(environment)
+		binding := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: bindingName, Namespace: gatewayNamespace}}
+		if err := r.Get(ctx, types.NamespacedName{Name: bindingName, Namespace: gatewayNamespace}, binding); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		} else if err == nil && !environmentOwns(binding, environment) {
-			return fmt.Errorf("%w: %s/%s", ErrGatewayBindingCollision, gatewayNamespace, GatewayAccessBindingName)
+			return fmt.Errorf("%w: %s/%s", ErrGatewayBindingCollision, gatewayNamespace, bindingName)
 		}
 		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, binding, func() error {
 			binding.RoleRef = rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: GatewayAccessRoleName}
@@ -88,7 +101,8 @@ func (r *LLMWorkloadEnvironmentReconciler) removeGatewayAccess(
 ) error {
 	for _, gatewayNamespace := range r.gatewayNamespaces() {
 		binding := &rbacv1.RoleBinding{}
-		if err := r.Get(ctx, types.NamespacedName{Name: GatewayAccessBindingName, Namespace: gatewayNamespace}, binding); err != nil {
+		name := types.NamespacedName{Name: gatewayAccessBindingName(environment), Namespace: gatewayNamespace}
+		if err := r.Get(ctx, name, binding); err != nil {
 			if apierrors.IsNotFound(err) {
 				continue
 			}
