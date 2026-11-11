@@ -35,7 +35,7 @@ spec:
             - name: LWE_MIN_DURATION
               value: 15m
             - name: LWE_MAX_DURATION
-              value: 72h
+              value: 168h
             # Optional hosted OpenShift provisioning; see docs/hypershift.md.
             - name: HYPERSHIFT_CONFIG
               value: '{"enabled":false,"profiles":{}}'

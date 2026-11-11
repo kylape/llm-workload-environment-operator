@@ -21,7 +21,7 @@ func TestExpirationConfigFromEnv(t *testing.T) {
 		wantMax time.Duration
 		invalid bool
 	}{
-		{name: "defaults", wantMin: 15 * time.Minute, wantMax: 72 * time.Hour},
+		{name: "defaults", wantMin: 15 * time.Minute, wantMax: 7 * 24 * time.Hour},
 		{name: "custom", values: map[string]string{"LWE_MIN_DURATION": "30m", "LWE_MAX_DURATION": "5h30m"}, wantMin: 30 * time.Minute, wantMax: 330 * time.Minute},
 		{name: "invalid minimum", values: map[string]string{"LWE_MIN_DURATION": "later"}, invalid: true},
 		{name: "zero maximum", values: map[string]string{"LWE_MAX_DURATION": "0s"}, invalid: true},
