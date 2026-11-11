@@ -61,7 +61,7 @@ spec:
             optional: true
         steps:
           - name: clone
-            image: alpine/git:2.47.2
+            image: registry.access.redhat.com/ubi9/go-toolset:1.26
             env:
               - name: SOURCE_URL
                 value: $(params.git-url)
@@ -71,6 +71,9 @@ spec:
               #!/bin/sh
               set -eu
               find "$(workspaces.source.path)" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+              # The workspace directory is owned by a different UID than this
+              # step runs as; git refuses to touch it without this exception.
+              git config --global --add safe.directory '*'
               git init "$(workspaces.source.path)"
               cd "$(workspaces.source.path)"
               git remote add origin "$SOURCE_URL"
@@ -78,7 +81,7 @@ spec:
               git checkout --detach FETCH_HEAD
               git rev-parse HEAD | tr -d '\n' > "$(results.source-revision.path)"
           - name: build-manager
-            image: golang:1.25
+            image: registry.access.redhat.com/ubi9/go-toolset:1.26
             env:
               - name: GOMAXPROCS
                 value: "2"
@@ -88,12 +91,16 @@ spec:
                 value: /tmp/go-cache
               - name: GOMODCACHE
                 value: /tmp/go-mod-cache
+              - name: GOTOOLCHAIN
+                value: local
             script: |
               #!/bin/sh
               set -eu
-              go test ./...
+              # -buildvcs=false: the workspace's git checkout is owned by a
+              # different step user, which trips git's safe-directory check.
+              go test -buildvcs=false ./...
               go vet ./...
-              CGO_ENABLED=0 go build -o /tmp/manager ./cmd/manager
+              CGO_ENABLED=0 go build -buildvcs=false -o /tmp/manager ./cmd/manager
             workingDir: $(workspaces.source.path)
           - name: build-image
             image: quay.io/buildah/stable:v1.39.3
