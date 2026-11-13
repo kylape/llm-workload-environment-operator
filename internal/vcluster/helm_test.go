@@ -38,6 +38,9 @@ func TestInstallArgsLimitHostStorageSync(t *testing.T) {
 		"sync.fromHost.storageClasses.enabled=true",
 		"sync.fromHost.csiNodes.enabled=false",
 		"sync.fromHost.csiDrivers.enabled=false",
+		"sync.toHost.resourceClaims.enabled=true",
+		"sync.toHost.resourceClaimTemplates.enabled=true",
+		"sync.fromHost.deviceClasses.enabled=true",
 	} {
 		if !contains(args, value) {
 			t.Fatalf("install args do not contain %q: %v", value, args)

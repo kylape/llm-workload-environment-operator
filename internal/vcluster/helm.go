@@ -108,6 +108,9 @@ func installArgs(name, namespace, chartPath string, openShift bool, publicHost s
 		"--set", "sync.fromHost.storageClasses.enabled=true",
 		"--set", "sync.fromHost.csiNodes.enabled=false",
 		"--set", "sync.fromHost.csiDrivers.enabled=false",
+		"--set", "sync.toHost.resourceClaims.enabled=true",
+		"--set", "sync.toHost.resourceClaimTemplates.enabled=true",
+		"--set", "sync.fromHost.deviceClasses.enabled=true",
 	}
 	if openShift {
 		args = append(args, "--set-string", "controlPlane.statefulSet.security.profile=restricted")
