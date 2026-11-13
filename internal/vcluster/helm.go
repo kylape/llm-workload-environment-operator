@@ -11,7 +11,7 @@ import (
 
 const (
 	DefaultHelmPath  = "/helm"
-	DefaultChartPath = "/charts/vcluster-0.0.1-combined.4.tgz"
+	DefaultChartPath = "/charts/vcluster-0.0.1-kueue-gates.37b50bb1c.tgz"
 )
 
 type Installer interface {

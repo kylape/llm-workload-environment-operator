@@ -13,13 +13,13 @@ RUN microdnf install -y tar gzip && \
     tar -xzf /tmp/helm.tar.gz -C /tmp && \
     install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm && \
     mkdir -p /charts && \
-    helm pull oci://quay.io/klape/charts/vcluster --version 0.0.1-combined.4 --destination /charts && \
-    echo "c4c5f1fc5fd4b6f8e7bad290fcf756825cf5fbc040a18077ba86e689ed771c59  /charts/vcluster-0.0.1-combined.4.tgz" | sha256sum -c -
+    helm pull oci://quay.io/klape/charts/vcluster --version 0.0.1-kueue-gates.37b50bb1c --destination /charts && \
+    echo "40998dcac8a9c84bfdb1216bb5154a7f9a4974c6c18f3dc84ab4839846693c7f  /charts/vcluster-0.0.1-kueue-gates.37b50bb1c.tgz" | sha256sum -c -
 
 FROM registry.access.redhat.com/ubi9/ubi-micro:9.6
 WORKDIR /
 COPY --from=builder /manager /manager
 COPY --from=helm /usr/local/bin/helm /helm
-COPY --from=helm /charts/vcluster-0.0.1-combined.4.tgz /charts/vcluster-0.0.1-combined.4.tgz
+COPY --from=helm /charts/vcluster-0.0.1-kueue-gates.37b50bb1c.tgz /charts/vcluster-0.0.1-kueue-gates.37b50bb1c.tgz
 USER 65532:65532
 ENTRYPOINT ["/manager"]
