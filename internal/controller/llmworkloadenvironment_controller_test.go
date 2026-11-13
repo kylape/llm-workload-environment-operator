@@ -585,7 +585,7 @@ func TestEnvironmentRoleCannotMutateLocalQueues(t *testing.T) {
 	}
 }
 
-func TestVClusterRoleOnlyReadsRequiredStorageDiscovery(t *testing.T) {
+func TestVClusterRoleOnlyGrantsStorageDiscoveryAndDRA(t *testing.T) {
 	t.Parallel()
 	manifest, err := os.ReadFile("../../config/rbac/vcluster_role.yaml")
 	if err != nil {
@@ -595,19 +595,41 @@ func TestVClusterRoleOnlyReadsRequiredStorageDiscovery(t *testing.T) {
 	if err := yaml.Unmarshal(manifest, role); err != nil {
 		t.Fatal(err)
 	}
-	if role.Name != VClusterRoleName || len(role.Rules) != 1 {
+	if role.Name != VClusterRoleName || len(role.Rules) != 4 {
 		t.Fatalf("unexpected vCluster role: %#v", role)
 	}
-	rule := role.Rules[0]
-	if len(rule.APIGroups) != 1 || rule.APIGroups[0] != "storage.k8s.io" ||
-		len(rule.Resources) != 2 || !contains(rule.Resources, "csistoragecapacities") ||
-		!contains(rule.Resources, "storageclasses") {
-		t.Fatalf("unexpected vCluster role resources: %#v", rule)
+	storage := role.Rules[0]
+	if len(storage.APIGroups) != 1 || storage.APIGroups[0] != "storage.k8s.io" ||
+		len(storage.Resources) != 2 || !contains(storage.Resources, "csistoragecapacities") ||
+		!contains(storage.Resources, "storageclasses") {
+		t.Fatalf("unexpected vCluster role storage rule: %#v", storage)
 	}
-	for _, verb := range rule.Verbs {
+	for _, verb := range storage.Verbs {
 		if verb != "get" && verb != "list" && verb != "watch" {
-			t.Fatalf("vCluster role grants mutating verb %q", verb)
+			t.Fatalf("vCluster role grants mutating verb %q for storage discovery", verb)
 		}
+	}
+	// DRA sync: DeviceClass read from host; claims and templates sync both ways.
+	deviceClasses := role.Rules[1]
+	if len(deviceClasses.APIGroups) != 1 || deviceClasses.APIGroups[0] != "resource.k8s.io" ||
+		len(deviceClasses.Resources) != 1 || deviceClasses.Resources[0] != "deviceclasses" {
+		t.Fatalf("unexpected vCluster role device classes rule: %#v", deviceClasses)
+	}
+	for _, verb := range deviceClasses.Verbs {
+		if verb != "get" && verb != "list" && verb != "watch" {
+			t.Fatalf("vCluster role grants mutating verb %q for device classes", verb)
+		}
+	}
+	claims := role.Rules[2]
+	if len(claims.APIGroups) != 1 || claims.APIGroups[0] != "resource.k8s.io" ||
+		len(claims.Resources) != 2 || !contains(claims.Resources, "resourceclaims") ||
+		!contains(claims.Resources, "resourceclaimtemplates") {
+		t.Fatalf("unexpected vCluster role resource claims rule: %#v", claims)
+	}
+	claimStatus := role.Rules[3]
+	if len(claimStatus.APIGroups) != 1 || claimStatus.APIGroups[0] != "resource.k8s.io" ||
+		len(claimStatus.Resources) != 1 || claimStatus.Resources[0] != "resourceclaims/status" {
+		t.Fatalf("unexpected vCluster role resource claims status rule: %#v", claimStatus)
 	}
 }
 
