@@ -113,8 +113,8 @@ func TestHyperShiftEarlyAccessAndWithdrawal(t *testing.T) {
 		if api == nil || full == nil || api.ObservedGeneration != e.Generation || full.ObservedGeneration != e.Generation {
 			t.Fatal("missing current-generation access/readiness conditions")
 		}
-		if (api.Status == metav1.ConditionTrue) != apiAccessible || (full.Status == metav1.ConditionTrue) != ready || (len(e.Status.Kubeconfig) > 0) != apiAccessible {
-			t.Fatalf("access=%v ready=%v credentials=%v", api, full, len(e.Status.Kubeconfig) > 0)
+		if (api.Status == metav1.ConditionTrue) != apiAccessible || (full.Status == metav1.ConditionTrue) != ready || (e.Status.KubeconfigSecretRef != nil) != apiAccessible {
+			t.Fatalf("access=%v ready=%v credentials=%v", api, full, e.Status.KubeconfigSecretRef != nil)
 		}
 	}
 	assertStatus(true, false)

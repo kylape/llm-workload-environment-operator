@@ -53,15 +53,33 @@ func newArgoCDTestEnvironment(t *testing.T) *environmentv1alpha1.LLMWorkloadEnvi
 		},
 		Spec: environmentv1alpha1.LLMWorkloadEnvironmentSpec{Mode: environmentv1alpha1.EnvironmentModeVCluster},
 		Status: environmentv1alpha1.LLMWorkloadEnvironmentStatus{
-			Kubeconfig: encodeArgoCDTestKubeconfig(t, testArgoCDKubeconfig()),
-			Conditions: []metav1.Condition{{Type: environmentv1alpha1.ReadyCondition, Status: metav1.ConditionTrue, Reason: "Ready", LastTransitionTime: metav1.Now()}},
+			Kubeconfig: encodeArgoCDTestKubeconfig(t, testArgoCDKubeconfig()), //nolint:staticcheck // SA1019: fixture models a published environment during the migration window
+			// The controller sets the Secret reference wherever it sets the
+			// inline bytes; registration consumes the Secret.
+			KubeconfigSecretRef: &corev1.LocalObjectReference{Name: "example-kubeconfig"},
+			Conditions:          []metav1.Condition{{Type: environmentv1alpha1.ReadyCondition, Status: metav1.ConditionTrue, Reason: "Ready", LastTransitionTime: metav1.Now()}},
 		},
 	}
+}
+
+// argoCDTestEnvironmentKubeconfig returns the fixture environment's legacy
+// inline kubeconfig for tests that call ensureArgoCDClusterSecret directly.
+// The single suppression point for the deprecated field's migration window.
+func argoCDTestEnvironmentKubeconfig(environment *environmentv1alpha1.LLMWorkloadEnvironment) []byte {
+	return environment.Status.Kubeconfig //nolint:staticcheck // SA1019: legacy fixture bytes during the migration window
 }
 
 func argoCDTestClient(t *testing.T, environment *environmentv1alpha1.LLMWorkloadEnvironment, objects ...client.Object) client.WithWatch {
 	t.Helper()
 	objects = append(objects, environment)
+	if environment.Status.KubeconfigSecretRef != nil && len(environment.Status.Kubeconfig) != 0 { //nolint:staticcheck // SA1019: fixture models a published environment during the migration window
+		// Model the kubeconfig Secret the controller publishes next to the
+		// environment: same namespace, data under the "kubeconfig" key.
+		objects = append(objects, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: environment.Status.KubeconfigSecretRef.Name, Namespace: environment.Namespace},
+			Data:       map[string][]byte{"kubeconfig": environment.Status.Kubeconfig}, //nolint:staticcheck // SA1019: fixture models the published Secret during the migration window
+		})
+	}
 	return fake.NewClientBuilder().WithScheme(testScheme(t)).WithStatusSubresource(environment).WithObjects(objects...).Build()
 }
 
@@ -167,7 +185,7 @@ func TestArgoCDClusterSecretSynchronization(t *testing.T) {
 	c := argoCDTestClient(t, environment)
 	environment = loadArgoCDTestEnvironment(t, c, environment)
 	r := &LLMWorkloadEnvironmentReconciler{Client: c, ArgoCDNamespace: "argocd"}
-	if err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig); err != nil {
+	if err := r.ensureArgoCDClusterSecret(ctx, environment, argoCDTestEnvironmentKubeconfig(environment)); err != nil {
 		t.Fatal(err)
 	}
 	secret := &corev1.Secret{}
@@ -184,7 +202,7 @@ func TestArgoCDClusterSecretSynchronization(t *testing.T) {
 		t.Fatal("missing durable cleanup reference")
 	}
 	version := secret.ResourceVersion
-	if err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig); err != nil {
+	if err := r.ensureArgoCDClusterSecret(ctx, environment, argoCDTestEnvironmentKubeconfig(environment)); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Get(ctx, key, secret); err != nil || secret.ResourceVersion != version {
@@ -218,7 +236,7 @@ func TestArgoCDClusterSecretSynchronization(t *testing.T) {
 	if err := c.Delete(ctx, secret); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig); err != nil {
+	if err := r.ensureArgoCDClusterSecret(ctx, environment, argoCDTestEnvironmentKubeconfig(environment)); err != nil {
 		t.Fatal("registration deletion was not repaired:", err)
 	}
 }
@@ -239,7 +257,7 @@ func TestArgoCDReferenceMustBePersistedBeforeSecretCreation(t *testing.T) {
 		},
 	})
 	r := &LLMWorkloadEnvironmentReconciler{Client: blocked, ArgoCDNamespace: "argocd"}
-	err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig)
+	err := r.ensureArgoCDClusterSecret(ctx, environment, argoCDTestEnvironmentKubeconfig(environment))
 	if err == nil || creates != 0 || strings.Contains(err.Error(), "private-tenant-token") {
 		t.Fatal("reference write failure must prevent creation and must be sanitized")
 	}
@@ -250,7 +268,7 @@ func TestArgoCDReferenceMustBePersistedBeforeSecretCreation(t *testing.T) {
 		t.Fatal(err)
 	}
 	environment = loadArgoCDTestEnvironment(t, c, environment)
-	if err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig); err != nil {
+	if err := r.ensureArgoCDClusterSecret(ctx, environment, argoCDTestEnvironmentKubeconfig(environment)); err != nil {
 		t.Fatal("recorded intent was not resumed:", err)
 	}
 }
@@ -261,7 +279,7 @@ func TestArgoCDNamespaceChangeAndDisableCleanup(t *testing.T) {
 	c := argoCDTestClient(t, environment)
 	environment = loadArgoCDTestEnvironment(t, c, environment)
 	r := &LLMWorkloadEnvironmentReconciler{Client: c, ArgoCDNamespace: "old-argocd"}
-	if err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig); err != nil {
+	if err := r.ensureArgoCDClusterSecret(ctx, environment, argoCDTestEnvironmentKubeconfig(environment)); err != nil {
 		t.Fatal(err)
 	}
 	r.ArgoCDNamespace = "new-argocd"
@@ -275,7 +293,7 @@ func TestArgoCDNamespaceChangeAndDisableCleanup(t *testing.T) {
 	if err := r.prepareArgoCDRegistration(ctx, environment); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig); err != nil {
+	if err := r.ensureArgoCDClusterSecret(ctx, environment, argoCDTestEnvironmentKubeconfig(environment)); err != nil {
 		t.Fatal(err)
 	}
 	if environment.Status.ArgoCDClusterSecretRef.Namespace != "new-argocd" {
@@ -339,7 +357,7 @@ func TestArgoCDCollisionAndAPIErrors(t *testing.T) {
 	c := argoCDTestClient(t, environment, secret)
 	environment = loadArgoCDTestEnvironment(t, c, environment)
 	r := &LLMWorkloadEnvironmentReconciler{Client: c, ArgoCDNamespace: "argocd"}
-	if err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig); !errors.Is(err, ErrArgoCDClusterSecretCollision) {
+	if err := r.ensureArgoCDClusterSecret(ctx, environment, argoCDTestEnvironmentKubeconfig(environment)); !errors.Is(err, ErrArgoCDClusterSecretCollision) {
 		t.Fatal(err)
 	}
 	if err := r.removeArgoCDClusterSecret(ctx, environment); !errors.Is(err, ErrArgoCDClusterSecretCollision) {
@@ -357,7 +375,7 @@ func TestArgoCDCollisionAndAPIErrors(t *testing.T) {
 	r.Client = interceptor.NewClient(c, interceptor.Funcs{Create: func(context.Context, client.WithWatch, client.Object, ...client.CreateOption) error {
 		return apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "test", errors.New("private-tenant-token"))
 	}})
-	err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig)
+	err := r.ensureArgoCDClusterSecret(ctx, environment, argoCDTestEnvironmentKubeconfig(environment))
 	if err == nil || !strings.Contains(err.Error(), "Forbidden") || strings.Contains(err.Error(), "private-tenant-token") {
 		t.Fatal("API error was not sanitized")
 	}
@@ -447,7 +465,12 @@ func TestArgoCDRegistrationConditionStates(t *testing.T) {
 				if err := c.List(context.Background(), secrets); err != nil {
 					t.Fatal(err)
 				}
-				if len(secrets.Items) != 0 {
+				for _, secret := range secrets.Items {
+					// The environment's own kubeconfig Secret is fixture
+					// state; anything else means registration leaked.
+					if secret.Namespace == e.Namespace && secret.Name == KubeconfigSecretName(e) {
+						continue
+					}
 					t.Fatal("registration was published without a ready opted-in environment")
 				}
 			}
@@ -491,7 +514,7 @@ func TestArgoCDRefusesSecretCreationWhenCRDPrunesReference(t *testing.T) {
 		},
 	})
 	r := &LLMWorkloadEnvironmentReconciler{Client: pruningClient, APIReader: c, ArgoCDNamespace: "argocd"}
-	err := r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig)
+	err := r.ensureArgoCDClusterSecret(ctx, environment, argoCDTestEnvironmentKubeconfig(environment))
 	if err == nil || !strings.Contains(err.Error(), "updated LWE CRD") || creates != 0 {
 		t.Fatal("an old CRD must not allow creation of credentials without durable cleanup intent")
 	}

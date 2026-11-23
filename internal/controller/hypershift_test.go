@@ -383,7 +383,7 @@ func TestHyperShiftDisabledNeverPublishesHostCredentials(t *testing.T) {
 	if err := r.Get(ctx, request.NamespacedName, e); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.Status.Kubeconfig) != 0 {
+	if e.Status.KubeconfigSecretRef != nil {
 		t.Fatal("disabled hosted provider exposed a host kubeconfig")
 	}
 	found := false

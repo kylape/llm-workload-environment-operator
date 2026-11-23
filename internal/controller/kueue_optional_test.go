@@ -110,7 +110,7 @@ func TestReconcileWithoutKueue(t *testing.T) {
 				t.Fatal(err)
 			}
 			environment = loadArgoCDTestEnvironment(t, r.Client, environment)
-			if !apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ReadyCondition) || len(environment.Status.Kubeconfig) == 0 {
+			if !apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ReadyCondition) || environment.Status.KubeconfigSecretRef == nil {
 				t.Fatalf("environment failed without Kueue: %#v", environment.Status.Conditions)
 			}
 			if result.RequeueAfter != 0 {

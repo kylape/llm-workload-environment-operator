@@ -193,7 +193,23 @@ type LLMWorkloadEnvironmentStatus struct {
 	// Kubeconfig contains a base64-encoded kubeconfig for verified API access.
 	// HyperShift may publish it before workers and full installation are Ready.
 	// SNO publishes it after the provider verifies guest readiness and identity.
+	//
+	// Deprecated: credentials belong in the Secret referenced by
+	// KubeconfigSecretRef, not inline in status, where every reader of the
+	// object can see them. This field remains populated during the migration
+	// window and will be removed once consumers have moved. New consumers
+	// must read the Secret.
 	Kubeconfig []byte `json:"kubeconfig,omitempty"`
+
+	// KubeconfigSecretRef identifies the Secret, in the environment's own
+	// namespace, that holds the verified kubeconfig under the "kubeconfig"
+	// key. It is set at the same points the inline field is — HyperShift may
+	// publish before workers and full installation are Ready; SNO after the
+	// provider verifies guest readiness and identity — and cleared when
+	// credentials are withdrawn. Reading it requires Secret access in the
+	// environment's namespace, separate from the ability to observe status.
+	// +optional
+	KubeconfigSecretRef *corev1.LocalObjectReference `json:"kubeconfigSecretRef,omitempty"`
 
 	// ArgoCDClusterSecretRef records the registration Secret to reconcile or clean
 	// up, including when the integration is disabled or its namespace changes.
@@ -210,7 +226,7 @@ type LLMWorkloadEnvironmentStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Namespaced,shortName=llmwe;lwe
 // +kubebuilder:subresource:status
-// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 59",message="environment names must be at most 59 characters to allow the env- prefix"
+// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 52",message="environment names must be at most 52 characters to allow the env- prefix and the kubeconfig Secret suffix"
 // +kubebuilder:validation:XValidation:rule="!has(self.spec) || !has(self.spec.mode) || self.spec.mode != 'HyperShift' || size(self.metadata.name) <= 51",message="HyperShift environment names must be at most 51 characters for the hosted control-plane namespace"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="Namespace",type="string",JSONPath=".status.namespaceRef.name"

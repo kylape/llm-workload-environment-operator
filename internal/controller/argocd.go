@@ -268,9 +268,14 @@ func (r *LLMWorkloadEnvironmentReconciler) reconcileArgoCDRegistration(ctx conte
 			condition.Reason, condition.Message = "EnvironmentUnavailable", "Environment credentials cannot currently be refreshed; the recorded registration is retained"
 		}
 	default:
-		registrationErr = r.ensureArgoCDClusterSecret(ctx, environment, environment.Status.Kubeconfig)
-		condition.Status = metav1.ConditionTrue
-		condition.Reason, condition.Message = "Registered", "Argo CD cluster Secret is synchronized"
+		kubeconfig, kubeconfigErr := r.environmentKubeconfig(ctx, environment)
+		if kubeconfigErr != nil {
+			registrationErr = kubeconfigErr
+		} else {
+			registrationErr = r.ensureArgoCDClusterSecret(ctx, environment, kubeconfig)
+			condition.Status = metav1.ConditionTrue
+			condition.Reason, condition.Message = "Registered", "Argo CD cluster Secret is synchronized"
+		}
 	}
 	if registrationErr != nil {
 		condition.Status = metav1.ConditionFalse

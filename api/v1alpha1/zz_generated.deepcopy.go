@@ -152,7 +152,7 @@ func (in *LLMWorkloadEnvironmentSpec) DeepCopyInto(out *LLMWorkloadEnvironmentSp
 	if in.SNO != nil {
 		in, out := &in.SNO, &out.SNO
 		*out = new(SNOEnvironmentSpec)
-		**out = **in
+		(*in).DeepCopyInto(*out)
 	}
 }
 
@@ -197,6 +197,11 @@ func (in *LLMWorkloadEnvironmentStatus) DeepCopyInto(out *LLMWorkloadEnvironment
 		in, out := &in.Kubeconfig, &out.Kubeconfig
 		*out = make([]byte, len(*in))
 		copy(*out, *in)
+	}
+	if in.KubeconfigSecretRef != nil {
+		in, out := &in.KubeconfigSecretRef, &out.KubeconfigSecretRef
+		*out = new(v1.LocalObjectReference)
+		**out = **in
 	}
 	if in.ArgoCDClusterSecretRef != nil {
 		in, out := &in.ArgoCDClusterSecretRef, &out.ArgoCDClusterSecretRef
