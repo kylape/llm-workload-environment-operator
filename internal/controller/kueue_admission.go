@@ -178,14 +178,14 @@ func kueuePodNamespaceSelector(data []byte) (labels.Selector, error) {
 		podEnabled = podEnabled || framework == "pod"
 	}
 	if !podEnabled {
-		return nil, fmt.Errorf("Kueue pod integration is not enabled")
+		return nil, fmt.Errorf("kueue pod integration is not enabled")
 	}
 	selector := config.ManagedJobsNamespaceSelector
 	if selector == nil && config.APIVersion == "config.kueue.x-k8s.io/v1beta1" && config.Integrations.PodOptions != nil {
 		selector = config.Integrations.PodOptions.NamespaceSelector
 	}
 	if selector == nil {
-		return nil, fmt.Errorf("Kueue namespace selection is implicit; configure managedJobsNamespaceSelector explicitly so LWE can validate it")
+		return nil, fmt.Errorf("kueue namespace selection is implicit; configure managedJobsNamespaceSelector explicitly so LWE can validate it")
 	}
 	if errs := metavalidation.ValidateLabelSelector(selector, metavalidation.LabelSelectorValidationOptions{}, field.NewPath("namespaceSelector")); len(errs) != 0 {
 		return nil, fmt.Errorf("invalid Kueue namespace selector: %w", errs.ToAggregate())
@@ -213,7 +213,7 @@ func (r *LLMWorkloadEnvironmentReconciler) validateKueueAdmission(ctx context.Co
 	}
 	selector, err := kueuePodNamespaceSelector([]byte(cm.Data[config.ConfigKey]))
 	if err != nil {
-		return "KueueAdmissionConfigurationInvalid", fmt.Errorf("Kueue ConfigMap %s/%s key %q: %w", config.ConfigNamespace, config.ConfigName, config.ConfigKey, err)
+		return "KueueAdmissionConfigurationInvalid", fmt.Errorf("kueue ConfigMap %s/%s key %q: %w", config.ConfigNamespace, config.ConfigName, config.ConfigKey, err)
 	}
 	namespace := &corev1.Namespace{}
 	if err := reader.Get(ctx, types.NamespacedName{Name: namespaceName}, namespace); err != nil {
