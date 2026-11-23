@@ -30,8 +30,8 @@ const (
 )
 
 var (
-	ErrArgoCDClusterSecretCollision = errors.New("Argo CD cluster Secret is not controlled by this environment")
-	errArgoCDCleanupPending         = errors.New("Argo CD registration cleanup is pending")
+	ErrArgoCDClusterSecretCollision = errors.New("argo CD cluster Secret is not controlled by this environment")
+	errArgoCDCleanupPending         = errors.New("argo CD registration cleanup is pending")
 )
 
 // ValidateArgoCDNamespace accepts an empty namespace to disable registration.
@@ -77,7 +77,7 @@ func buildArgoCDClusterData(raw []byte, name string) (map[string][]byte, error) 
 		return nil, errors.New("environment kubeconfig must use an HTTPS API endpoint without user info, query, or fragment")
 	}
 	if cluster.CertificateAuthority != "" || user.ClientCertificate != "" || user.ClientKey != "" || user.TokenFile != "" {
-		return nil, errors.New("Argo CD registration requires embedded credentials and CA data; credential file paths are unsupported")
+		return nil, errors.New("argo CD registration requires embedded credentials and CA data; credential file paths are unsupported")
 	}
 	if user.Exec != nil || user.AuthProvider != nil || user.Username != "" || user.Password != "" ||
 		user.Impersonate != "" || user.ImpersonateUID != "" || len(user.ImpersonateGroups) != 0 || len(user.ImpersonateUserExtra) != 0 || cluster.ProxyURL != "" {
@@ -135,7 +135,7 @@ func (r *LLMWorkloadEnvironmentReconciler) setArgoCDSecretReference(ctx context.
 		return argoCDAPIError("verify Argo CD registration reference", err)
 	}
 	if persisted.UID != environment.UID || !reflect.DeepEqual(persisted.Status.ArgoCDClusterSecretRef, reference) {
-		return errors.New("Argo CD registration reference was not persisted; install the updated LWE CRD before enabling registration")
+		return errors.New("argo CD registration reference was not persisted; install the updated LWE CRD before enabling registration")
 	}
 	if reference != nil && (persisted.DeletionTimestamp != nil || !argoCDRegistrationRequested(persisted) ||
 		persisted.Labels[ApplicationProfileLabel] != environment.Labels[ApplicationProfileLabel]) {

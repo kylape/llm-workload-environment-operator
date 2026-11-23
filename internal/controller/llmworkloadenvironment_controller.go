@@ -91,7 +91,10 @@ func (r *LLMWorkloadEnvironmentReconciler) Reconcile(ctx context.Context, req ct
 		if err := r.Update(ctx, environment); err != nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{Requeue: true}, nil
+		// Requeue rather than proceeding in the same pass: provisioning
+		// must not start until the finalizer claim is persisted.
+		// (RequeueAfter because bare Requeue is deprecated.)
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 	if apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ExpiredCondition) {
 		done, err := r.cleanupEnvironmentResources(ctx, environment, namespaceName)

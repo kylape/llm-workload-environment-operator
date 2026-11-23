@@ -430,7 +430,7 @@ func (r *LLMWorkloadEnvironmentReconciler) ensureHyperShiftSecret(ctx context.Co
 		return err
 	}
 	if !environmentOwns(o, e) {
-		return fmt.Errorf("Secret %s belongs to another environment", name)
+		return fmt.Errorf("secret %s belongs to another environment", name)
 	}
 	if o.Type == kind && reflect.DeepEqual(o.Data, data) {
 		return nil
@@ -475,7 +475,10 @@ func (r *LLMWorkloadEnvironmentReconciler) finalizeHyperShift(ctx context.Contex
 	// Destroy the HostedCluster first. HyperShift deletes its CAPI Cluster and
 	// workers together; deleting the last NodePool first can wait forever on
 	// guest disruption budgets that cannot be satisfied with zero workers.
-	for _, o := range existing {
+	// Deletion is paced one object per reconcile: delete the head of the
+	// list, then wait for it to fully disappear before issuing the next.
+	if len(existing) > 0 {
+		o := existing[0]
 		if o.GetDeletionTimestamp() == nil {
 			uid := o.GetUID()
 			if err := r.Delete(ctx, o, &client.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &uid}}); client.IgnoreNotFound(err) != nil {
