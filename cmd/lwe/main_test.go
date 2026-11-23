@@ -14,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 // withFakeClient swaps the CLI's client factory for a fake client built
@@ -73,24 +74,36 @@ func TestUpAdoptsReadyEnvironmentAndVerifiesCredentials(t *testing.T) {
 func TestUpWaitsForEnvironmentToBecomeReady(t *testing.T) {
 	c := withFakeClient(t)
 
-	// Simulate the operator: after creation, publish readiness and
-	// credentials asynchronously — the object runUp first sees is not
-	// yet ready, so its post-wait credential read must refresh.
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		key := client.ObjectKey{Namespace: "requests", Name: "created"}
-		current := &environmentv1alpha1.LLMWorkloadEnvironment{}
-		if err := c.Get(context.Background(), key, current); err != nil {
-			return
-		}
-		current.Status = readyEnvironment("created").Status
-		if err := c.Status().Update(context.Background(), current); err != nil {
-			return
-		}
-		if err := c.Create(context.Background(), kubeconfigSecret("created", []byte("async-bytes"))); err != nil {
-			return
-		}
-	}()
+	// Simulate the operator through a Get interceptor — deterministic,
+	// no goroutine racing the fake client: once the environment exists
+	// in the store, every read returns it as Ready (the mutation is
+	// copy-only, so the store keeps the created-not-ready state, exactly
+	// like a real object between reconciles), and the credentials
+	// Secret is created in the store exactly once. runUp must refresh
+	// after waitReady to see the reference — the stale-read regression
+	// this test guards.
+	secretCreated := false
+	intercepted := interceptor.NewClient(c, interceptor.Funcs{
+		Get: func(ctx context.Context, underlying client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if err := underlying.Get(ctx, key, obj, opts...); err != nil {
+				return err
+			}
+			environment, ok := obj.(*environmentv1alpha1.LLMWorkloadEnvironment)
+			if !ok || key.Name != "created" {
+				return nil
+			}
+			environment.Status = readyEnvironment("created").Status
+			if !secretCreated {
+				secretCreated = true
+				if err := underlying.Create(ctx, kubeconfigSecret("created", []byte("async-bytes"))); err != nil {
+					t.Errorf("creating the credentials Secret from the interceptor: %v", err)
+				}
+			}
+			return nil
+		},
+	})
+	newClientFor = func(string) (client.Client, error) { return intercepted, nil }
+	t.Cleanup(func() { newClientFor = newClient })
 
 	if err := runUp(context.Background(), []string{"-namespace", "requests", "-mode", "VCluster", "-name", "created", "-timeout", "30s"}); err != nil {
 		t.Fatal(err)
