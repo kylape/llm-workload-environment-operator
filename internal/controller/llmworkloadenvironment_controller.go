@@ -791,7 +791,21 @@ func (r *LLMWorkloadEnvironmentReconciler) setReady(
 ) error {
 	before := environment.DeepCopy()
 	environment.Status.NamespaceRef = &corev1.LocalObjectReference{Name: namespaceName}
-	environment.Status.Kubeconfig = append([]byte(nil), kubeconfig...)
+	environment.Status.Kubeconfig = append([]byte(nil), kubeconfig...) //nolint:staticcheck // SA1019: intentional migration-window write; removed with the field
+	if len(kubeconfig) != 0 {
+		secret, err := r.ensureKubeconfigSecret(ctx, environment, kubeconfig)
+		if err != nil {
+			return err
+		}
+		environment.Status.KubeconfigSecretRef = &corev1.LocalObjectReference{Name: secret.Name}
+	} else if environment.Status.KubeconfigSecretRef != nil {
+		// Withdraw the credentials when the environment is not ready,
+		// mirroring the inline field being cleared above.
+		if err := r.deleteKubeconfigSecret(ctx, environment); err != nil {
+			return err
+		}
+		environment.Status.KubeconfigSecretRef = nil
+	}
 	apimeta.SetStatusCondition(&environment.Status.Conditions, metav1.Condition{
 		Type:               environmentv1alpha1.ReadyCondition,
 		Status:             status,

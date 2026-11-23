@@ -68,7 +68,7 @@ func TestSNORequestIsIdempotentAndDoesNotPublishHostCredentials(t *testing.T) {
 	if err := r.Get(context.Background(), request.NamespacedName, current); err != nil {
 		t.Fatal(err)
 	}
-	if len(current.Status.Kubeconfig) != 0 || current.Status.SNOVirtualMachineRef == nil {
+	if current.Status.KubeconfigSecretRef != nil || current.Status.SNOVirtualMachineRef == nil {
 		t.Fatal("waiting SNO must expose only the request reference")
 	}
 	if condition := apimeta.FindStatusCondition(current.Status.Conditions, environmentv1alpha1.ReadyCondition); condition == nil || condition.Reason != "SNOProvisioning" {
@@ -109,7 +109,7 @@ func TestSNOExternalCredentialsRequireCurrentReadinessAndOwnedSecret(t *testing.
 	if err := r.Get(context.Background(), request.NamespacedName, current); err != nil {
 		t.Fatal(err)
 	}
-	if len(current.Status.Kubeconfig) != 0 {
+	if current.Status.KubeconfigSecretRef != nil {
 		t.Fatal("stale provider readiness was accepted")
 	}
 	status["conditions"] = []interface{}{map[string]interface{}{"type": "Ready", "status": "True", "observedGeneration": int64(2)}}
@@ -139,8 +139,12 @@ func TestSNOExternalCredentialsRequireCurrentReadinessAndOwnedSecret(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertKubeconfigIdentity(t, current.Status.Kubeconfig, e.Name)
-	if !apimeta.IsStatusConditionTrue(current.Status.Conditions, environmentv1alpha1.ReadyCondition) || string(current.Status.Kubeconfig) != string(expected) || result.RequeueAfter == 0 {
+	published, err := r.environmentKubeconfig(context.Background(), current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertKubeconfigIdentity(t, published, e.Name)
+	if !apimeta.IsStatusConditionTrue(current.Status.Conditions, environmentv1alpha1.ReadyCondition) || string(published) != string(expected) || result.RequeueAfter == 0 {
 		t.Fatal("provider access was not handed off and polled")
 	}
 }
@@ -238,7 +242,7 @@ func TestMissingSNOProviderDoesNotFallBackToNamespaceCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	condition := apimeta.FindStatusCondition(current.Status.Conditions, environmentv1alpha1.ReadyCondition)
-	if condition == nil || condition.Reason != "SNOProviderNotAvailable" || len(current.Status.Kubeconfig) != 0 {
+	if condition == nil || condition.Reason != "SNOProviderNotAvailable" || current.Status.KubeconfigSecretRef != nil {
 		t.Fatal("missing provider did not remain explicitly unavailable")
 	}
 }

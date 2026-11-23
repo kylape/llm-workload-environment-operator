@@ -191,17 +191,17 @@ spec:
                     minLength: 1
                     type: string
                   maxPods:
-                    description: MaxPods optionally overrides the size-based maximum
-                      pods per guest node. When omitted, the SNO provider chooses
-                      500, 1,000, or 2,000 from the CPU tier.
+                    description: |-
+                      MaxPods optionally overrides the size-based maximum pods per guest node.
+                      When omitted, the SNO provider chooses 500, 1,000, or 2,000 from the CPU tier.
                     format: int32
                     maximum: 2000
                     minimum: 1
                     type: integer
                   size:
                     default: small
-                    description: Size selects the SNO VM's CPU, memory, and
-                      workload disk capacity.
+                    description: Size selects the SNO VM's CPU, memory, and workload
+                      disk capacity.
                     enum:
                     - small
                     - medium
@@ -365,8 +365,35 @@ spec:
                   Kubeconfig contains a base64-encoded kubeconfig for verified API access.
                   HyperShift may publish it before workers and full installation are Ready.
                   SNO publishes it after the provider verifies guest readiness and identity.
+
+                  Deprecated: credentials belong in the Secret referenced by
+                  KubeconfigSecretRef, not inline in status, where every reader of the
+                  object can see them. This field remains populated during the migration
+                  window and will be removed once consumers have moved. New consumers
+                  must read the Secret.
                 format: byte
                 type: string
+              kubeconfigSecretRef:
+                description: |-
+                  KubeconfigSecretRef identifies the Secret, in the environment's own
+                  namespace, that holds the verified kubeconfig under the "kubeconfig"
+                  key. It is set at the same points the inline field is — HyperShift may
+                  publish before workers and full installation are Ready; SNO after the
+                  provider verifies guest readiness and identity — and cleared when
+                  credentials are withdrawn. Reading it requires Secret access in the
+                  environment's namespace, separate from the ability to observe status.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               lastObservedDuration:
                 description: |-
                   LastObservedDuration records the last requested duration evaluated by the operator,
@@ -476,9 +503,9 @@ spec:
             type: object
         type: object
         x-kubernetes-validations:
-        - message: environment names must be at most 59 characters to allow the env-
-            prefix
-          rule: size(self.metadata.name) <= 59
+        - message: environment names must be at most 52 characters to allow the env-
+            prefix and the kubeconfig Secret suffix
+          rule: size(self.metadata.name) <= 52
         - message: HyperShift environment names must be at most 51 characters for
             the hosted control-plane namespace
           rule: '!has(self.spec) || !has(self.spec.mode) || self.spec.mode != ''HyperShift''

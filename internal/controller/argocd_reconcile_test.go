@@ -63,6 +63,25 @@ func requireArgoCDCondition(t *testing.T, environment *environmentv1alpha1.LLMWo
 	}
 }
 
+// argoCDReconcileKubeconfig reads the environment's published kubeconfig
+// Secret — the credential path registration consumes — through the
+// reconciler's client.
+func argoCDReconcileKubeconfig(t *testing.T, r *LLMWorkloadEnvironmentReconciler, environment *environmentv1alpha1.LLMWorkloadEnvironment) []byte {
+	t.Helper()
+	if environment.Status.KubeconfigSecretRef == nil {
+		t.Fatal("environment has no kubeconfig Secret reference")
+	}
+	secret := &corev1.Secret{}
+	key := client.ObjectKey{Name: environment.Status.KubeconfigSecretRef.Name, Namespace: environment.Namespace}
+	if err := r.Get(context.Background(), key, secret); err != nil {
+		t.Fatal(err)
+	}
+	if len(secret.Data["kubeconfig"]) == 0 {
+		t.Fatalf("kubeconfig Secret %s/%s is empty", secret.Namespace, secret.Name)
+	}
+	return secret.Data["kubeconfig"]
+}
+
 func TestReconcileArgoCDUsesFinalizedPublicKubeconfig(t *testing.T) {
 	ctx := context.Background()
 	r, environment, request := argoCDReconcileFixture(t)
@@ -79,7 +98,7 @@ func TestReconcileArgoCDUsesFinalizedPublicKubeconfig(t *testing.T) {
 	if err := r.Get(ctx, key, secret); err != nil {
 		t.Fatal(err)
 	}
-	if string(secret.Data["server"]) != "https://203.0.113.10:443" || strings.Contains(string(environment.Status.Kubeconfig), "internal-api") {
+	if string(secret.Data["server"]) != "https://203.0.113.10:443" || strings.Contains(string(argoCDReconcileKubeconfig(t, r, environment)), "internal-api") {
 		t.Fatal("registration did not use the finalized public kubeconfig")
 	}
 	var connection argoCDClusterConfig
@@ -120,7 +139,7 @@ func TestReconcileArgoCDFailurePreservesEnvironmentReadiness(t *testing.T) {
 		t.Fatal("registration failure was not returned safely")
 	}
 	environment = loadArgoCDTestEnvironment(t, r.Client, environment)
-	if !apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ReadyCondition) || len(environment.Status.Kubeconfig) == 0 {
+	if !apimeta.IsStatusConditionTrue(environment.Status.Conditions, environmentv1alpha1.ReadyCondition) || environment.Status.KubeconfigSecretRef == nil {
 		t.Fatal("optional registration failure cleared provisioning readiness or credentials")
 	}
 	requireArgoCDCondition(t, environment, metav1.ConditionFalse, "RegistrationFailed")
