@@ -1,0 +1,31 @@
+# llm-d-ci-driver: the CI job container for llm-d inference work.
+#
+# One image, three roles:
+#   * publish jobs — buildah (replaces the quay.io/buildah/stable +
+#     tarball-fetch bridge: this image has git)
+#   * e2e / mock-smoke jobs — the test runner: git + uv (uv manages its
+#     own pythons) + the lwe CLI for environment lifecycle
+#   * laptop repro — same tools, same versions
+#
+# Built on GitHub-hosted runners (see .github/workflows/ci-driver.yml):
+# building a buildah image with buildah is nested nonsense, and docker is
+# native there. Pushed to quay.io/klape/llm-d-ci-driver with sha + latest.
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
+USER root
+WORKDIR /workspace
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN GOMAXPROCS=2 GOFLAGS=-p=1 CGO_ENABLED=0 go build -o /lwe ./cmd/lwe
+
+# buildah/stable is quay-hosted (no docker.io rate limits on the ARC
+# egress) and is the exact base the publish jobs were validated against.
+FROM quay.io/buildah/stable:v1.38.0
+USER root
+# git: publish jobs currently fetch source tarballs because buildah/stable
+# ships no git — this fixes that. The driver always clones.
+RUN microdnf -y install git && microdnf clean all
+COPY --from=builder /lwe /usr/local/bin/lwe
+# uv: the test suites are uv-driven; it installs and manages its own
+# CPythons, so no distro python is needed here.
+RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL=/usr/local/bin sh

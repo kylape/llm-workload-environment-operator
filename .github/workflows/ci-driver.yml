@@ -1,0 +1,49 @@
+# Build and push the llm-d-ci-driver image (Dockerfile.ci-driver): the
+# CI job container for llm-d inference work — buildah + git + uv + the
+# lwe CLI. See Dockerfile.ci-driver for the composition rationale.
+#
+# The ONLY GitHub-hosted job in the fleet: building a buildah image with
+# buildah is nested nonsense, docker is native here, and the ARC egress
+# constraints (docker.io rate limits) do not apply to GitHub runners.
+name: ci-driver
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile.ci-driver
+      - .github/workflows/ci-driver.yml
+      - cmd/lwe/**
+      - api/**
+      - go.mod
+      - go.sum
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-driver-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    environment: quay-push
+    steps:
+      - name: clone
+        run: |
+          set -eu
+          git clone --depth 1 "https://github.com/${{ github.repository }}.git" .
+          git fetch --depth 1 origin "${{ github.sha }}"
+          git checkout --detach FETCH_HEAD
+      - name: build-and-push
+        env:
+          QUAY_USERNAME: ${{ secrets.QUAY_USERNAME }}
+          QUAY_PASSWORD: ${{ secrets.QUAY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "${QUAY_PASSWORD}" | docker login quay.io \
+            --username "${QUAY_USERNAME}" --password-stdin
+          IMG="quay.io/klape/llm-d-ci-driver:${{ github.sha }}"
+          docker build -f Dockerfile.ci-driver -t "$IMG" .
+          docker push "$IMG"
+          docker tag "$IMG" quay.io/klape/llm-d-ci-driver:latest
+          docker push quay.io/klape/llm-d-ci-driver:latest
