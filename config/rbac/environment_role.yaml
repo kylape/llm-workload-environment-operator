@@ -251,3 +251,18 @@ rules:
       - get
       - list
       - watch
+  # Batch gateway conformance: testcases deploy LLMBatchGateway
+  # (batch.llm-d.ai) alongside the inference service.
+  - apiGroups:
+      - batch.llm-d.ai
+    resources:
+      - llmbatchgateways
+    verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
