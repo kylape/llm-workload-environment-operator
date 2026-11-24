@@ -318,6 +318,19 @@ rules:
       - get
       - list
       - watch
+  # Conformance discovery reads KServe's inferenceservice-config
+  # (ingress.kserveIngressGateway) to target the gateway the platform
+  # actually routes model traffic through; without it the discovery
+  # silently falls back to label-matching and can pick a gateway whose
+  # service does not exist.
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      - inferenceservice-config
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
