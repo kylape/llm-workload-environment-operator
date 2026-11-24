@@ -26,6 +26,9 @@ USER root
 # ships no git — this fixes that. The driver always clones.
 RUN microdnf -y install git && microdnf clean all
 COPY --from=builder /lwe /usr/local/bin/lwe
+# kubectl: the conformance suite drives deployments through it.
+RUN curl -Ls -o /usr/local/bin/kubectl "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
+    && chmod +x /usr/local/bin/kubectl
 # uv: the test suites are uv-driven; it installs and manages its own
 # CPythons, so no distro python is needed here.
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_UNMANAGED_INSTALL=/usr/local/bin sh
