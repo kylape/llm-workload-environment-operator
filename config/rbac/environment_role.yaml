@@ -266,3 +266,16 @@ rules:
       - patch
       - update
       - watch
+  # Conformance testcases bind cluster roles (e.g. the kserve metrics
+  # reader) to their per-testcase SAs. The apiserver's escalation guard
+  # requires the binder to either hold the granted permissions or hold
+  # escalate on the binding itself; this grants the latter, scoped to
+  # this namespace's roles and rolebindings only.
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+    verbs:
+      - bind
+      - escalate
